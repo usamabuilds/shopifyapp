@@ -46,7 +46,9 @@ model Shop {
   outboundMessages   OutboundMessage[]
   outboundCallbacks  OutboundMessageCallback[]
   orderConfirmations OrderConfirmation[]
+  orderStatusUpdates  OrderStatusUpdate[]
 }
+
 
 
 model ShopSettings {
@@ -57,6 +59,12 @@ model ShopSettings {
   timezone       String?
   orderConfirmationEnabled Boolean @default(false)
   orderConfirmationTemplateKey String?
+  orderStatusUpdatesEnabled Boolean @default(false)
+  orderStatusTemplatePartialFulfilled String?
+  orderStatusTemplateFulfilled String?
+  orderStatusTemplateOutForDelivery String?
+  orderStatusTemplateDelivered String?
+  orderStatusTemplateCancelled String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -110,6 +118,7 @@ model OutboundMessage {
   attempts              OutboundMessageAttempt[]
   callbacks             OutboundMessageCallback[]
   orderConfirmations    OrderConfirmation[]
+  orderStatusUpdates    OrderStatusUpdate[]
   shop                  Shop                     @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
 
   @@index([shopDomain, status, createdAt])
@@ -186,6 +195,33 @@ model OrderConfirmation {
 
   @@unique([shopDomain, orderId])
   @@index([shopDomain, status, createdAt])
+}
+
+
+model OrderStatusUpdate {
+  id                     String                  @id @default(cuid())
+  shopDomain             String
+  webhookEventId         String
+  orderId                String
+  statusType             OrderStatusType
+  state                  OrderStatusUpdateState  @default(PENDING)
+  stateReason            String?
+  dedupeKey              String                  @unique
+  sourceTopic            String
+  sourceReference        String?
+  templateKey            String?
+  recipientPhone         String?
+  normalizedPayload      String
+  outboundMessageId      String?                 @unique
+  createdAt              DateTime                @default(now())
+  processedAt            DateTime?
+  failedAt               DateTime?
+  updatedAt              DateTime                @updatedAt
+  shop                   Shop                    @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+  outboundMessage        OutboundMessage?        @relation(fields: [outboundMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([shopDomain, orderId, statusType])
+  @@index([shopDomain, state, createdAt])
 }
 
 model WebhookEvent {
@@ -293,5 +329,24 @@ enum RetryClass {
 enum CallbackEventStatus {
   RECEIVED
   RECONCILED
+  FAILED
+}
+
+enum OrderStatusType {
+  ORDER_PARTIALLY_FULFILLED
+  ORDER_FULFILLED
+  ORDER_OUT_FOR_DELIVERY
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+}
+
+enum OrderStatusUpdateState {
+  PENDING
+  SKIPPED_DISABLED
+  SKIPPED_NOT_ELIGIBLE
+  SKIPPED_MISSING_TEMPLATE
+  DUPLICATE_SUPPRESSED
+  QUEUED
+  SENT
   FAILED
 }
