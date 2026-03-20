@@ -34,14 +34,15 @@ model Session {
 }
 
 model Shop {
-  id           String          @id @default(cuid())
-  shopDomain   String          @unique
-  installedAt  DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id            String          @id @default(cuid())
+  shopDomain    String          @unique
+  installedAt   DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   uninstalledAt DateTime?
-  appInstalled Boolean         @default(true)
-  settings     ShopSettings?
-  onboarding   OnboardingState?
+  appInstalled  Boolean         @default(true)
+  settings      ShopSettings?
+  onboarding    OnboardingState?
+  webhookEvents WebhookEvent[]
 }
 
 model ShopSettings {
@@ -70,4 +71,70 @@ model OnboardingState {
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
   shop                        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model WebhookEvent {
+  id                   String                @id @default(cuid())
+  source               WebhookSource
+  topic                String
+  shopDomain           String
+  externalEventId      String?
+  dedupeKey            String                @unique
+  rawPayload           String
+  headersPayload       String
+  normalizedPayload    String
+  normalizationVersion Int                   @default(1)
+  processingStatus     WebhookProcessingStatus @default(RECEIVED)
+  receivedAt           DateTime              @default(now())
+  enqueuedAt           DateTime?
+  processedAt          DateTime?
+  failedAt             DateTime?
+  failureReason        String?
+  failureCount         Int                   @default(0)
+  deadLetteredAt       DateTime?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  shop                 Shop                  @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+  queueItem            WebhookQueueItem?
+
+  @@index([shopDomain, topic, receivedAt])
+  @@index([processingStatus, receivedAt])
+}
+
+model WebhookQueueItem {
+  id             String             @id @default(cuid())
+  webhookEventId String             @unique
+  queueName      String
+  status         QueueStatus        @default(PENDING)
+  availableAt    DateTime           @default(now())
+  lockedAt       DateTime?
+  attempts       Int                @default(0)
+  lastError      String?
+  deadLetteredAt DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  webhookEvent   WebhookEvent       @relation(fields: [webhookEventId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+}
+
+enum WebhookSource {
+  SHOPIFY
+}
+
+enum WebhookProcessingStatus {
+  RECEIVED
+  ENQUEUED
+  PROCESSING
+  PROCESSED
+  FAILED
+  DEAD_LETTER
+}
+
+enum QueueStatus {
+  PENDING
+  PROCESSING
+  FAILED
+  DEAD_LETTER
+  DONE
 }
