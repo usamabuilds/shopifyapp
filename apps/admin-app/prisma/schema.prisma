@@ -32,3 +32,42 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model Shop {
+  id           String          @id @default(cuid())
+  shopDomain   String          @unique
+  installedAt  DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  uninstalledAt DateTime?
+  appInstalled Boolean         @default(true)
+  settings     ShopSettings?
+  onboarding   OnboardingState?
+}
+
+model ShopSettings {
+  id             String   @id @default(cuid())
+  shopId         String   @unique
+  contactEmail   String?
+  defaultCountry String?
+  timezone       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model OnboardingState {
+  id                          String   @id @default(cuid())
+  shopId                      String   @unique
+  currentStep                 String   @default("identity_confirmed")
+  checklistIdentityComplete   Boolean  @default(true)
+  checklistSettingsComplete   Boolean  @default(false)
+  checklistBillingComplete    Boolean  @default(false)
+  readinessSettingsConfigured Boolean  @default(false)
+  readinessWhatsappConnected  Boolean  @default(false)
+  readinessTemplatesReady     Boolean  @default(false)
+  readinessAutomationsReady   Boolean  @default(false)
+  completedAt                 DateTime?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  shop                        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
