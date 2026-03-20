@@ -45,6 +45,7 @@ model Shop {
   webhookEvents      WebhookEvent[]
   outboundMessages   OutboundMessage[]
   outboundCallbacks  OutboundMessageCallback[]
+  orderConfirmations OrderConfirmation[]
 }
 
 
@@ -54,6 +55,8 @@ model ShopSettings {
   contactEmail   String?
   defaultCountry String?
   timezone       String?
+  orderConfirmationEnabled Boolean @default(false)
+  orderConfirmationTemplateKey String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -106,6 +109,7 @@ model OutboundMessage {
   updatedAt             DateTime                 @updatedAt
   attempts              OutboundMessageAttempt[]
   callbacks             OutboundMessageCallback[]
+  orderConfirmations    OrderConfirmation[]
   shop                  Shop                     @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
 
   @@index([shopDomain, status, createdAt])
@@ -159,6 +163,29 @@ model OutboundMessageCallback {
 
   @@index([providerName, providerMessageId, receivedAt])
   @@index([status, receivedAt])
+}
+
+
+model OrderConfirmation {
+  id                     String                    @id @default(cuid())
+  shopDomain             String
+  orderId                String
+  webhookEventId         String
+  status                 OrderConfirmationStatus   @default(PENDING)
+  statusReason           String?
+  templateKey            String?
+  recipientPhone         String?
+  normalizedOrderPayload String
+  outboundMessageId      String?                   @unique
+  createdAt              DateTime                  @default(now())
+  processedAt            DateTime?
+  failedAt               DateTime?
+  updatedAt              DateTime                  @updatedAt
+  shop                   Shop                      @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+  outboundMessage        OutboundMessage?          @relation(fields: [outboundMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([shopDomain, orderId])
+  @@index([shopDomain, status, createdAt])
 }
 
 model WebhookEvent {
@@ -217,6 +244,15 @@ enum WebhookProcessingStatus {
   PROCESSED
   FAILED
   DEAD_LETTER
+}
+
+enum OrderConfirmationStatus {
+  PENDING
+  SKIPPED_DISABLED
+  SKIPPED_NOT_ELIGIBLE
+  QUEUED
+  SENT
+  FAILED
 }
 
 enum QueueStatus {

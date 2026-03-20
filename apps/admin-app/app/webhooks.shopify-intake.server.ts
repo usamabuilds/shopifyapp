@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
 
-type WebhookProcessingStatus = "RECEIVED" | "ENQUEUED" | "FAILED" | "DEAD_LETTER";
+type WebhookProcessingStatus =
+  | "RECEIVED"
+  | "ENQUEUED"
+  | "PROCESSED"
+  | "FAILED"
+  | "DEAD_LETTER";
 type QueueStatus = "PENDING" | "PROCESSING" | "FAILED" | "DEAD_LETTER" | "DONE";
 
 type WebhookEventRecord = {
@@ -37,6 +42,7 @@ type PrismaWebhookDb = {
   };
   webhookQueueItem: {
     upsert: (args: Record<string, unknown>) => Promise<WebhookQueueRecord>;
+    updateMany: (args: Record<string, unknown>) => Promise<unknown>;
   };
 };
 
@@ -185,11 +191,54 @@ export async function processShopifyWebhookIntake(input: {
   };
 }
 
+export async function markWebhookIntakeProcessed(args: { webhookEventId: string }) {
+  const { webhookEventId } = args;
+
+  await db.webhookQueueItem.updateMany({
+    where: {
+      webhookEventId,
+      status: {
+        in: ["PENDING", "PROCESSING", "FAILED"],
+      },
+    },
+    data: {
+      status: "DONE" satisfies QueueStatus,
+      lockedAt: null,
+      lastError: null,
+    },
+  });
+
+  await db.webhookEvent.update({
+    where: {
+      id: webhookEventId,
+    },
+    data: {
+      processingStatus: "PROCESSED",
+      processedAt: new Date(),
+      failureReason: null,
+    },
+  });
+}
+
 export async function markWebhookIntakeFailure(args: {
   webhookEventId: string;
   reason: string;
 }) {
   const { webhookEventId, reason } = args;
+
+  await db.webhookQueueItem.updateMany({
+    where: {
+      webhookEventId,
+    },
+    data: {
+      status: "FAILED" satisfies QueueStatus,
+      lastError: reason,
+      lockedAt: null,
+      attempts: {
+        increment: 1,
+      },
+    },
+  });
 
   await db.webhookEvent.update({
     where: {

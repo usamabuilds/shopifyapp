@@ -34,6 +34,7 @@ export type OutboundMessageRecord = {
   providerMessageId: string | null;
   callbackCorrelationId: string | null;
   status: OutboundMessageStatus;
+  statusReason: string | null;
   retryCount: number;
   maxRetryCount: number;
   recipientAddress: string;
