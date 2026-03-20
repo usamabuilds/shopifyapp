@@ -33,3 +33,5 @@ pnpm build
 
 - Keep routes under `app/routes` aligned with app navigation in `app/routes/app.tsx`.
 - Preserve the authentication setup in `app/shopify.server.ts` and route loaders using `authenticate.admin(request)`.
+- Webhook intake now follows a verify -> persist -> normalize -> enqueue flow through `app/webhooks.shopify-intake.server.ts`.
+- Webhook intake persistence models are in `prisma/schema.prisma` (`WebhookEvent` and `WebhookQueueItem`) and are intended for async worker pickup in later phases.
