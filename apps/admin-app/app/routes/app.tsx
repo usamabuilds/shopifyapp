@@ -21,13 +21,13 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <NavMenu>
-        <a href="/app">Overview</a>
+        <a href="/app">Dashboard</a>
+        <a href="/app/settings">Onboarding & Settings</a>
         <a href="/app/templates">Templates</a>
         <a href="/app/automations">Automations</a>
         <a href="/app/workflows">Workflows</a>
         <a href="/app/campaigns">Campaigns</a>
         <a href="/app/analytics">Analytics</a>
-        <a href="/app/settings">Settings</a>
       </NavMenu>
       <Outlet />
     </AppProvider>
