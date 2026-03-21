@@ -1,18 +1,17 @@
 import type { ActionFunctionArgs } from "react-router";
 
 import {
-  attributeRecoveredOrder,
   dispatchDueCartRecoveries,
-} from "../automations.cart-recovery.server";
-import { processOrderCreatedConfirmation } from "../automations.order-confirmation.server";
-import { authenticate } from "../shopify.server";
+  processCheckoutUpdatedForRecovery,
+} from "./automations.cart-recovery.server";
+import { authenticate } from "./shopify.server";
 import {
   markWebhookIntakeFailure,
   markWebhookIntakeProcessed,
   processShopifyWebhookIntake,
-} from "../webhooks.shopify-intake.server";
+} from "./webhooks.shopify-intake.server";
 
-export const action = async ({ request }: ActionFunctionArgs) => {
+export async function handleCartRecoveryWebhookAction({ request }: ActionFunctionArgs) {
   const { payload, topic, shop } = await authenticate.webhook(request);
 
   const intake = await processShopifyWebhookIntake({
@@ -27,16 +26,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    await processOrderCreatedConfirmation({
+    await processCheckoutUpdatedForRecovery({
       shopDomain: shop,
       webhookEventId: intake.webhookEventId,
       payload,
     });
-    await attributeRecoveredOrder({
-      shopDomain: shop,
-      webhookEventId: intake.webhookEventId,
-      payload,
-    });
+
     await dispatchDueCartRecoveries({
       shopDomain: shop,
       limit: 20,
@@ -54,9 +49,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
     console.error(
-      `[order-confirmation] webhook processing failed. shop=${shop} eventId=${intake.webhookEventId} reason=${reason}`,
+      `[cart-recovery] webhook processing failed. shop=${shop} topic=${topic} eventId=${intake.webhookEventId} reason=${reason}`,
     );
   }
 
   return new Response();
-};
+}
