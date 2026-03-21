@@ -48,7 +48,12 @@ model Shop {
   orderConfirmations OrderConfirmation[]
   orderStatusUpdates  OrderStatusUpdate[]
   cartRecoveries      CartRecovery[]
+  campaignSettings    CampaignSettings?
+  broadcastCampaigns  BroadcastCampaign[]
+  campaignRecipients  BroadcastCampaignRecipient[]
+  campaignDispatchLogs BroadcastCampaignDispatchLog[]
 }
+
 
 
 
@@ -123,6 +128,7 @@ model OutboundMessage {
   callbacks             OutboundMessageCallback[]
   orderConfirmations    OrderConfirmation[]
   orderStatusUpdates    OrderStatusUpdate[]
+  campaignRecipients    BroadcastCampaignRecipient[]
   shop                  Shop                     @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
 
   @@index([shopDomain, status, createdAt])
@@ -265,6 +271,89 @@ model CartRecovery {
   @@index([shopDomain, recoveredAt])
 }
 
+
+model CampaignSettings {
+  id                       String   @id @default(cuid())
+  shopId                   String   @unique
+  enabled                  Boolean  @default(false)
+  defaultTemplateKey       String?
+  dispatchBatchSize        Int      @default(20)
+  throttleMsBetweenMessages Int     @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  shop                     Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model BroadcastCampaign {
+  id                String                  @id @default(cuid())
+  shopDomain        String
+  name              String
+  messageBody       String
+  templateKey       String?
+  audienceType      BroadcastAudienceType
+  audienceQuery     String?
+  status            BroadcastCampaignStatus @default(DRAFT)
+  statusReason      String?
+  scheduleAt        DateTime?
+  sendNowRequestedAt DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  failedAt          DateTime?
+  cancelledAt       DateTime?
+  lastDispatchAt    DateTime?
+  totalRecipients   Int                     @default(0)
+  sentRecipients    Int                     @default(0)
+  failedRecipients  Int                     @default(0)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  shop              Shop                    @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+  recipients        BroadcastCampaignRecipient[]
+  dispatchLogs      BroadcastCampaignDispatchLog[]
+
+  @@index([shopDomain, status, scheduleAt])
+  @@index([shopDomain, createdAt])
+}
+
+model BroadcastCampaignRecipient {
+  id                 String                 @id @default(cuid())
+  campaignId         String
+  shopDomain         String
+  recipientAddress   String
+  dedupeKey          String                 @unique
+  state              BroadcastRecipientState @default(PENDING)
+  stateReason        String?
+  outboundMessageId  String?                @unique
+  dispatchAttemptCount Int                  @default(0)
+  lastDispatchedAt   DateTime?
+  sentAt             DateTime?
+  failedAt           DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  campaign           BroadcastCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  shop               Shop                   @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+  outboundMessage    OutboundMessage?       @relation(fields: [outboundMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([campaignId, recipientAddress])
+  @@index([campaignId, state, createdAt])
+  @@index([shopDomain, state, updatedAt])
+}
+
+model BroadcastCampaignDispatchLog {
+  id          String                @id @default(cuid())
+  campaignId  String
+  shopDomain  String
+  level       BroadcastLogLevel
+  eventType   String
+  message     String
+  metadata    String?
+  createdAt   DateTime              @default(now())
+  campaign    BroadcastCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  shop        Shop                  @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+
+  @@index([shopDomain, createdAt])
+  @@index([campaignId, createdAt])
+}
+
 model WebhookEvent {
   id                   String                @id @default(cuid())
   source               WebhookSource
@@ -402,4 +491,33 @@ enum CartRecoveryState {
   SENT
   FAILED
   RECOVERED
+}
+
+enum BroadcastAudienceType {
+  ALL_KNOWN_CONTACTS
+  RECENT_ORDER_CONTACTS
+  MANUAL_CONTACTS
+}
+
+enum BroadcastCampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum BroadcastRecipientState {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED_DUPLICATE
+}
+
+enum BroadcastLogLevel {
+  INFO
+  WARN
+  ERROR
 }
