@@ -14,8 +14,38 @@ import {
 } from "../campaigns.broadcast.server";
 import { authenticate } from "../shopify.server";
 
+function formatDateTime(value: Date | string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(value).toLocaleString();
+}
+
+function toDateTimeLocalValue(value: Date | string | null): string {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const selectedCampaignId = url.searchParams.get("campaignId");
 
   await dispatchDueBroadcastCampaigns({
     shopDomain: session.shop,
@@ -28,10 +58,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     listBroadcastCampaignLogs(session.shop),
   ]);
 
+  const selectedCampaign =
+    campaigns.find((campaign) => campaign.id === selectedCampaignId) ?? campaigns[0] ?? null;
+
+  const selectedCampaignLogs = selectedCampaign
+    ? logs.filter((log) => log.campaignId === selectedCampaign.id).slice(0, 20)
+    : [];
+
   return {
     settings,
     campaigns,
     logs,
+    selectedCampaign,
+    selectedCampaignLogs,
   };
 };
 
@@ -111,6 +150,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { saved: "campaign-rescheduled" as const };
   }
 
+  if (intent === "duplicate-campaign-draft") {
+    const input = parseCreateCampaignForm(formData);
+
+    await createBroadcastCampaign({
+      shopDomain: session.shop,
+      input: {
+        ...input,
+        name: `${input.name} (Copy)`,
+      },
+      mode: "draft",
+    });
+
+    return { saved: "campaign-duplicated" as const };
+  }
+
   const input = parseCreateCampaignForm(formData);
 
   await createBroadcastCampaign({
@@ -128,16 +182,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function CampaignsPage() {
-  const { settings, campaigns, logs } = useLoaderData<typeof loader>();
+  const { settings, campaigns, logs, selectedCampaign, selectedCampaignLogs } =
+    useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+
+  const selectedCampaignWarnings: string[] = selectedCampaign
+    ? [
+        selectedCampaign.status === "FAILED" && selectedCampaign.statusReason
+          ? selectedCampaign.statusReason
+          : null,
+        selectedCampaign.status === "DRAFT" && !selectedCampaign.templateKey && !settings.defaultTemplateKey
+          ? "No template key on this draft or in campaign defaults."
+          : null,
+        selectedCampaign.audienceType === "MANUAL_CONTACTS" && selectedCampaign.totalRecipients === 0
+          ? "Manual audience currently resolves to zero recipients."
+          : null,
+      ].filter((warning): warning is string => Boolean(warning))
+    : [];
 
   return (
     <s-page heading="Campaigns">
       <s-section heading="Broadcast campaign settings">
         <s-paragraph>
-          Basic broadcast controls for campaign queue processing. This first version uses a pragmatic audience model and
-          placeholder outbound provider dispatch behavior.
+          Configure queue behavior and defaults. Existing persisted campaigns remain manageable below.
         </s-paragraph>
+
+        {!settings.enabled ? (
+          <s-banner tone="warning">
+            Campaign dispatch is currently paused at the merchant level. Draft and scheduled campaigns will not send.
+          </s-banner>
+        ) : null}
 
         <Form method="post">
           <input type="hidden" name="intent" value="save-campaign-settings" />
@@ -185,7 +259,7 @@ export default function CampaignsPage() {
 
       <s-section heading="Create broadcast campaign">
         <s-paragraph>
-          Audience foundation options: all known contacts, recent order contacts (30 days), or manual contacts.
+          Create a draft, schedule for later, or queue a send now campaign using the existing persistence model.
         </s-paragraph>
 
         <Form method="post">
@@ -250,11 +324,14 @@ export default function CampaignsPage() {
         {actionData?.saved === "campaign-rescheduled" ? (
           <s-banner tone="success">Campaign schedule updated.</s-banner>
         ) : null}
+        {actionData?.saved === "campaign-duplicated" ? (
+          <s-banner tone="success">Campaign duplicated as draft.</s-banner>
+        ) : null}
       </s-section>
 
       <s-section heading="Campaign list">
         {campaigns.length === 0 ? (
-          <s-paragraph>No campaigns created yet.</s-paragraph>
+          <s-banner tone="info">No campaigns created yet. Create a draft to get started.</s-banner>
         ) : (
           <table>
             <thead>
@@ -267,7 +344,7 @@ export default function CampaignsPage() {
                 <th>Failed</th>
                 <th>Schedule</th>
                 <th>Updated</th>
-                <th>Actions</th>
+                <th>Open</th>
               </tr>
             </thead>
             <tbody>
@@ -279,15 +356,10 @@ export default function CampaignsPage() {
                   <td>{campaign.totalRecipients}</td>
                   <td>{campaign.sentRecipients}</td>
                   <td>{campaign.failedRecipients}</td>
-                  <td>{campaign.scheduleAt ? new Date(campaign.scheduleAt).toLocaleString() : "-"}</td>
-                  <td>{new Date(campaign.updatedAt).toLocaleString()}</td>
+                  <td>{formatDateTime(campaign.scheduleAt)}</td>
+                  <td>{formatDateTime(campaign.updatedAt)}</td>
                   <td>
-                    <Form method="post">
-                      <input type="hidden" name="campaignId" value={campaign.id} />
-                      <button type="submit" name="intent" value="queue-campaign-send-now">
-                        Send now
-                      </button>
-                    </Form>
+                    <a href={`/app/campaigns?campaignId=${campaign.id}`}>Manage</a>
                   </td>
                 </tr>
               ))}
@@ -296,9 +368,90 @@ export default function CampaignsPage() {
         )}
       </s-section>
 
-      <s-section heading="Campaign dispatch logs">
+      {selectedCampaign ? (
+        <>
+          <s-section heading={`Campaign details: ${selectedCampaign.name}`}>
+            <s-stack direction="block" gap="base">
+              <s-paragraph>Current state: {selectedCampaign.status}</s-paragraph>
+              <s-paragraph>Status reason: {selectedCampaign.statusReason ?? "-"}</s-paragraph>
+              <s-paragraph>Created: {formatDateTime(selectedCampaign.createdAt)}</s-paragraph>
+              <s-paragraph>Last updated: {formatDateTime(selectedCampaign.updatedAt)}</s-paragraph>
+              <s-paragraph>Scheduled for: {formatDateTime(selectedCampaign.scheduleAt)}</s-paragraph>
+            </s-stack>
+
+            {selectedCampaignWarnings.map((warning) => (
+              <s-banner key={warning} tone="warning">
+                {warning}
+              </s-banner>
+            ))}
+
+            <s-stack direction="inline" gap="base">
+              <Form method="post">
+                <input type="hidden" name="campaignId" value={selectedCampaign.id} />
+                <button type="submit" name="intent" value="queue-campaign-send-now">
+                  Queue send now
+                </button>
+              </Form>
+
+              <Form method="post">
+                <input type="hidden" name="intent" value="queue-campaign-schedule" />
+                <input type="hidden" name="campaignId" value={selectedCampaign.id} />
+                <input
+                  name="scheduleAt"
+                  type="datetime-local"
+                  defaultValue={toDateTimeLocalValue(selectedCampaign.scheduleAt)}
+                />
+                <button type="submit">Save schedule</button>
+              </Form>
+            </s-stack>
+
+            <details>
+              <summary>Duplicate this campaign as draft</summary>
+              <Form method="post">
+                <input type="hidden" name="intent" value="duplicate-campaign-draft" />
+                <input type="hidden" name="name" value={selectedCampaign.name} />
+                <input type="hidden" name="messageBody" value={selectedCampaign.messageBody} />
+                <input type="hidden" name="templateKey" value={selectedCampaign.templateKey ?? ""} />
+                <input type="hidden" name="audienceType" value={selectedCampaign.audienceType} />
+                <input type="hidden" name="scheduleAt" value="" />
+                <input type="hidden" name="manualRecipients" value="" />
+                <button type="submit">Create draft copy</button>
+              </Form>
+            </details>
+          </s-section>
+
+          <s-section heading="Recent campaign activity">
+            {selectedCampaignLogs.length === 0 ? (
+              <s-banner tone="info">No activity logs for this campaign yet.</s-banner>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Level</th>
+                    <th>Event</th>
+                    <th>Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedCampaignLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td>{formatDateTime(log.createdAt)}</td>
+                      <td>{log.level}</td>
+                      <td>{log.eventType}</td>
+                      <td>{log.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </s-section>
+        </>
+      ) : null}
+
+      <s-section heading="Global campaign dispatch logs">
         {logs.length === 0 ? (
-          <s-paragraph>No campaign logs yet.</s-paragraph>
+          <s-banner tone="info">No campaign logs yet.</s-banner>
         ) : (
           <table>
             <thead>
@@ -312,7 +465,7 @@ export default function CampaignsPage() {
             <tbody>
               {logs.map((log) => (
                 <tr key={log.id}>
-                  <td>{new Date(log.createdAt).toLocaleString()}</td>
+                  <td>{formatDateTime(log.createdAt)}</td>
                   <td>{log.level}</td>
                   <td>{log.eventType}</td>
                   <td>{log.message}</td>
