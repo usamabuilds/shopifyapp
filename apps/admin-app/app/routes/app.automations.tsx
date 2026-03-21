@@ -2,6 +2,13 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, useActionData, useLoaderData } from "react-router";
 
 import {
+  dispatchDueCartRecoveries,
+  getCartRecoverySettings,
+  listRecentCartRecoveries,
+  parseCartRecoverySettingsForm,
+  updateCartRecoverySettings,
+} from "../automations.cart-recovery.server";
+import {
   getOrderConfirmationSettings,
   listRecentOrderConfirmations,
   parseOrderConfirmationSettingsForm,
@@ -23,18 +30,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentConfirmations,
     orderStatusSettings,
     recentStatusUpdates,
+    cartRecoverySettings,
+    recentCartRecoveries,
   ] = await Promise.all([
     getOrderConfirmationSettings(session.shop),
     listRecentOrderConfirmations(session.shop),
     getOrderStatusUpdateSettings(session.shop),
     listRecentOrderStatusUpdates(session.shop),
+    getCartRecoverySettings(session.shop),
+    listRecentCartRecoveries(session.shop),
   ]);
+
+  await dispatchDueCartRecoveries({
+    shopDomain: session.shop,
+    limit: 20,
+  });
 
   return {
     confirmationSettings,
     recentConfirmations,
     orderStatusSettings,
     recentStatusUpdates,
+    cartRecoverySettings,
+    recentCartRecoveries,
   };
 };
 
@@ -52,6 +70,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { saved: "order-status" as const };
   }
 
+  if (intent === "save-cart-recovery-settings") {
+    await updateCartRecoverySettings(
+      session.shop,
+      parseCartRecoverySettingsForm(formData),
+    );
+
+    return { saved: "cart-recovery" as const };
+  }
+
   await updateOrderConfirmationSettings(
     session.shop,
     parseOrderConfirmationSettingsForm(formData),
@@ -66,6 +93,8 @@ export default function AutomationsPage() {
     recentConfirmations,
     orderStatusSettings,
     recentStatusUpdates,
+    cartRecoverySettings,
+    recentCartRecoveries,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
 
@@ -225,6 +254,88 @@ export default function AutomationsPage() {
                   <td>{item.statusType}</td>
                   <td>{item.state}</td>
                   <td>{item.stateReason ?? "-"}</td>
+                  <td>{new Date(item.updatedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </s-section>
+
+      <s-section heading="Abandoned cart recovery">
+        <s-paragraph>
+          Foundation flow using checkout update signals. A candidate is captured, delayed by a wait window, then
+          dispatched through the existing outbound layer.
+        </s-paragraph>
+
+        <Form method="post">
+          <input type="hidden" name="intent" value="save-cart-recovery-settings" />
+          <s-stack direction="block" gap="base">
+            <label>
+              <input
+                name="cartRecoveryEnabled"
+                type="checkbox"
+                defaultChecked={cartRecoverySettings.enabled}
+              />
+              Enable abandoned cart recovery
+            </label>
+
+            <label>
+              Template key: cart recovery
+              <input
+                name="cartRecoveryTemplateKey"
+                type="text"
+                defaultValue={cartRecoverySettings.templateKey}
+              />
+            </label>
+
+            <label>
+              Wait minutes before send
+              <input
+                name="cartRecoveryWaitMinutes"
+                type="number"
+                min={1}
+                max={10080}
+                defaultValue={cartRecoverySettings.waitMinutes}
+              />
+            </label>
+
+            <button type="submit">Save cart recovery settings</button>
+          </s-stack>
+        </Form>
+
+        {actionData?.saved === "cart-recovery" ? (
+          <s-banner tone="success">Cart recovery settings saved.</s-banner>
+        ) : null}
+      </s-section>
+
+      <s-section heading="Recent cart recovery attempts">
+        {recentCartRecoveries.length === 0 ? (
+          <s-paragraph>No cart recovery candidates have been captured yet.</s-paragraph>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Checkout ID</th>
+                <th>State</th>
+                <th>Reason</th>
+                <th>Recovered order</th>
+                <th>Recovered revenue</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentCartRecoveries.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.checkoutId}</td>
+                  <td>{item.state}</td>
+                  <td>{item.stateReason ?? "-"}</td>
+                  <td>{item.recoveredOrderNumber ?? item.recoveredOrderId ?? "-"}</td>
+                  <td>
+                    {item.recoveredRevenueAmount
+                      ? `${item.recoveredRevenueAmount} ${item.recoveredCurrencyCode ?? ""}`.trim()
+                      : "-"}
+                  </td>
                   <td>{new Date(item.updatedAt).toLocaleString()}</td>
                 </tr>
               ))}

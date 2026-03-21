@@ -47,6 +47,7 @@ model Shop {
   outboundCallbacks  OutboundMessageCallback[]
   orderConfirmations OrderConfirmation[]
   orderStatusUpdates  OrderStatusUpdate[]
+  cartRecoveries      CartRecovery[]
 }
 
 
@@ -65,6 +66,9 @@ model ShopSettings {
   orderStatusTemplateOutForDelivery String?
   orderStatusTemplateDelivered String?
   orderStatusTemplateCancelled String?
+  cartRecoveryEnabled Boolean @default(false)
+  cartRecoveryTemplateKey String?
+  cartRecoveryWaitMinutes Int @default(60)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
@@ -224,6 +228,43 @@ model OrderStatusUpdate {
   @@index([shopDomain, state, createdAt])
 }
 
+model CartRecovery {
+  id                     String             @id @default(cuid())
+  shopDomain             String
+  webhookEventId         String
+  checkoutId             String
+  checkoutToken          String?
+  cartToken              String?
+  state                  CartRecoveryState  @default(PENDING_WAIT)
+  stateReason            String?
+  dedupeKey              String             @unique
+  recipientPhone         String?
+  customerId             String?
+  templateKey            String?
+  checkoutSubtotalAmount String?
+  checkoutCurrencyCode   String?
+  normalizedPayload      String
+  recoveryEligibleAt     DateTime
+  lastEvaluatedAt        DateTime?
+  outboundMessageId      String?            @unique
+  sentAt                 DateTime?
+  processedAt            DateTime?
+  failedAt               DateTime?
+  recoveredAt            DateTime?
+  recoveredOrderId       String?
+  recoveredOrderNumber   String?
+  recoveredRevenueAmount String?
+  recoveredCurrencyCode  String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  shop                   Shop               @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
+  outboundMessage        OutboundMessage?   @relation(fields: [outboundMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([shopDomain, checkoutId])
+  @@index([shopDomain, state, recoveryEligibleAt])
+  @@index([shopDomain, recoveredAt])
+}
+
 model WebhookEvent {
   id                   String                @id @default(cuid())
   source               WebhookSource
@@ -349,4 +390,16 @@ enum OrderStatusUpdateState {
   QUEUED
   SENT
   FAILED
+}
+
+enum CartRecoveryState {
+  PENDING_WAIT
+  SKIPPED_DISABLED
+  SKIPPED_NOT_ELIGIBLE
+  SKIPPED_MISSING_TEMPLATE
+  DUPLICATE_SUPPRESSED
+  QUEUED
+  SENT
+  FAILED
+  RECOVERED
 }
