@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { Form, Link, useActionData, useLoaderData } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 
+import { getBroadcastCampaignSettings } from "../campaigns.broadcast.server";
 import {
   getShopOverviewState,
   getShopSettings,
@@ -9,28 +10,61 @@ import {
 } from "../models.shop.server";
 import { authenticate } from "../shopify.server";
 
+function nonEmpty(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  const [settings, overview] = await Promise.all([
+  const [settings, overview, campaignSettings] = await Promise.all([
     getShopSettings(session.shop),
     getShopOverviewState(session.shop),
+    getBroadcastCampaignSettings(session.shop),
   ]);
 
-  return { settings, overview };
+  return {
+    settings,
+    overview,
+    campaignSettings,
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
 
-  await upsertShopSettings(session.shop, parseSettingsFormData(formData));
+  const currentSettings = await getShopSettings(session.shop);
+  const parsed = parseSettingsFormData(formData);
 
-  return { saved: true };
+  await upsertShopSettings(session.shop, parsed);
+
+  const nextSettings = {
+    contactEmail: parsed.contactEmail ?? "",
+    defaultCountry: parsed.defaultCountry ?? "",
+    timezone: parsed.timezone ?? "",
+  };
+
+  const changedFields = [
+    { key: "contactEmail", label: "Contact email" },
+    { key: "defaultCountry", label: "Default country" },
+    { key: "timezone", label: "Timezone" },
+  ].filter((field) => {
+    const previousValue = nonEmpty(currentSettings[field.key as keyof typeof currentSettings]);
+    const nextValue = nonEmpty(nextSettings[field.key as keyof typeof nextSettings]);
+    return previousValue !== nextValue;
+  });
+
+  return {
+    saved: true as const,
+    savedAt: new Date().toISOString(),
+    changedFields: changedFields.map((item) => item.label),
+  };
 };
 
 export default function SettingsPage() {
-  const { settings, overview } = useLoaderData<typeof loader>();
+  const { settings, overview, campaignSettings } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
 
   const checklist = [
     {
@@ -41,21 +75,83 @@ export default function SettingsPage() {
     {
       label: "Basic settings",
       done: overview.onboarding.checklist.settingsComplete,
-      helpText: "Complete contact email, country, or timezone to mark this step done.",
+      helpText: "Contact email, country, or timezone marks this step complete.",
     },
     {
       label: "Billing setup",
       done: overview.onboarding.checklist.billingComplete,
-      helpText: "Reserved for a future billing flow foundation.",
+      helpText: "Reserved for existing billing foundation follow-up.",
     },
   ];
 
+  const warnings = [
+    !settings.contactEmail ? "Missing contact email: add one so support follow-up has an owner." : null,
+    !settings.defaultCountry ? "Missing default country: some defaults may be ambiguous in reports and forms." : null,
+    !settings.timezone ? "Missing timezone: scheduled actions may be harder to reason about." : null,
+    !campaignSettings.enabled ? "Campaign dispatch is currently paused in campaign settings." : null,
+  ].filter((item): item is string => Boolean(item));
+
+  const loading = navigation.state === "submitting";
+
   return (
-    <s-page heading="Onboarding & settings">
-      <s-section heading="Setup checklist">
+    <s-page heading="Settings">
+      <s-section heading="Settings categories">
         <s-stack direction="block" gap="small">
           <s-paragraph>
-            Current step: <strong>{overview.onboarding.currentStep}</strong>
+            Use these categories to keep existing foundations configured safely. This page focuses on merchant profile
+            and global defaults; other categories stay in their existing dedicated screens.
+          </s-paragraph>
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Purpose</th>
+                <th>Where to edit</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Merchant profile defaults</td>
+                <td>Contact and locale defaults used across setup and operations.</td>
+                <td>This page</td>
+              </tr>
+              <tr>
+                <td>Template mapping</td>
+                <td>Template keys and mapping visibility for sends.</td>
+                <td>
+                  <Link to="/app/templates">Templates</Link>
+                </td>
+              </tr>
+              <tr>
+                <td>Automation behavior</td>
+                <td>Enable/disable and per-flow template mapping.</td>
+                <td>
+                  <Link to="/app/automations">Automations</Link>
+                </td>
+              </tr>
+              <tr>
+                <td>Campaign dispatch controls</td>
+                <td>Broadcast defaults, throughput, and pause state.</td>
+                <td>
+                  <Link to="/app/campaigns">Campaigns</Link>
+                </td>
+              </tr>
+              <tr>
+                <td>Operational support tools</td>
+                <td>Inspect intake, outbound state, failures, and traces.</td>
+                <td>
+                  <Link to="/app/support-tools">Support tools</Link>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Setup checklist and readiness">
+        <s-stack direction="block" gap="small">
+          <s-paragraph>
+            Current setup step: <strong>{overview.onboarding.currentStep}</strong>
           </s-paragraph>
           {checklist.map((item) => (
             <s-banner key={item.label} tone={item.done ? "success" : "info"}>
@@ -65,11 +161,23 @@ export default function SettingsPage() {
         </s-stack>
       </s-section>
 
-      <s-section heading="Store preferences">
+      <s-section heading="Merchant profile defaults">
         <s-paragraph>
-          Save practical defaults used by your existing foundations. These values update setup progress and are safe to
-          adjust anytime.
+          Save practical defaults used by existing foundations. This write updates the same persistence as onboarding and
+          remains safe to change anytime.
         </s-paragraph>
+
+        {warnings.length > 0 ? (
+          <s-stack direction="block" gap="small">
+            {warnings.map((warning) => (
+              <s-banner key={warning} tone="warning">
+                {warning}
+              </s-banner>
+            ))}
+          </s-stack>
+        ) : (
+          <s-banner tone="success">All merchant profile defaults are configured.</s-banner>
+        )}
 
         <Form method="post">
           <s-stack direction="block" gap="base">
@@ -95,23 +203,31 @@ export default function SettingsPage() {
                 placeholder="America/New_York"
               />
             </label>
-            <button type="submit">Save settings</button>
+            <button type="submit" disabled={loading}>
+              {loading ? "Saving…" : "Save merchant profile settings"}
+            </button>
           </s-stack>
         </Form>
 
-        {actionData?.saved ? <s-banner tone="success">Settings saved and onboarding progress refreshed.</s-banner> : null}
+        {actionData?.saved ? (
+          <s-banner tone="success">
+            Settings saved at {new Date(actionData.savedAt).toLocaleString()}.{" "}
+            {actionData.changedFields.length > 0
+              ? `Updated: ${actionData.changedFields.join(", ")}.`
+              : "No field values changed; onboarding state was refreshed."}
+          </s-banner>
+        ) : null}
       </s-section>
 
-      <s-section heading="What to configure next">
+      <s-section heading="Merchant-safe guidance">
         <s-stack direction="block" gap="small">
           <s-paragraph>
-            <Link to="/app/templates">Template keys</Link> for outgoing messages.
+            If sends fail with missing templates, update template keys in Templates/Automations first, then verify
+            processing in <Link to="/app/support-tools">Support tools</Link>.
           </s-paragraph>
           <s-paragraph>
-            <Link to="/app/automations">Automation toggles</Link> for confirmation, status, and cart recovery.
-          </s-paragraph>
-          <s-paragraph>
-            <Link to="/app/campaigns">Campaign settings</Link> for dispatch behavior.
+            If campaigns are paused, switch campaign enablement back on from <Link to="/app/campaigns">Campaigns</Link>{" "}
+            before scheduling new sends.
           </s-paragraph>
         </s-stack>
       </s-section>
