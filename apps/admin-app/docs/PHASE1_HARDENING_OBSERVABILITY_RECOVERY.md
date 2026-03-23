@@ -17,6 +17,8 @@ Added shared operational logger (`app/observability.server.ts`) and wired it int
 - campaign dispatcher exceptions and batch loading visibility
 - workflow publish validation blocks + preview run outcomes
 - support-tools manual recovery actions
+- outbound dispatch start/success and callback receive/reconcile lifecycle events
+- explicit skip-state logging for order confirmation, order status updates, and cart recovery
 
 The logs are JSON records with consistent keys:
 - `domain`, `event`, `shopDomain`, `webhookEventId`, `entityId`, `reason`, `metadata`, `ts`
@@ -37,6 +39,7 @@ Support tools now include:
 
 Added explicit Phase 1 runbook:
 - `docs/PHASE1_OPERATOR_RUNBOOK.md`
+- `docs/PHASE1_HARDENING_CHECKLIST.md`
 
 Covers:
 - webhook failures
@@ -46,6 +49,7 @@ Covers:
 - duplicate suppression confusion
 - campaign misconfiguration
 - workflow run failures
+- operator-first hardening checklist for continued Phase 1 maintenance
 
 ## Non-goals preserved
 
@@ -61,4 +65,3 @@ Covers:
 3. Use **Recent failures and next actions** + runbook guidance.
 4. Trigger only scoped recovery actions after fixing root cause.
 5. Confirm state transitions in webhook/outbound/campaign/workflow sections.
-

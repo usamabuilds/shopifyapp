@@ -19,8 +19,9 @@ This runbook is for operator/support responders working in `app/support-tools`.
 - `lastError` or `failureReason` includes payload parsing/config reasons.
 
 **Triage**
-1. Open **Support tools → Webhook intake state**.
-2. Identify event topic + webhook event id.
+1. Open **Support tools → Common incident playbooks** and pick the webhook playbook.
+2. Open **Support tools → Webhook intake state**.
+3. Identify event topic + webhook event id.
 3. Confirm reason:
    - `missing_order_id`
    - `missing_checkout_id`
@@ -41,11 +42,12 @@ This runbook is for operator/support responders working in `app/support-tools`.
 - Item has not progressed for more than the expected threshold window.
 
 **Triage**
-1. Capture affected ids (webhook event id, outbound message id).
-2. Check recent logs for structured records by `domain`:
+1. Open the queue/retry playbook in Support tools for first checks.
+2. Capture affected ids (webhook event id, outbound message id).
+3. Check recent logs for structured records by `domain`:
    - `webhook_intake`
    - `outbound`
-3. Determine if reason is provider/config/transient.
+4. Determine if reason is provider/config/transient.
 
 **Recovery**
 1. If retry backlog is provider-related, wait or reduce throughput.
@@ -123,4 +125,3 @@ This runbook is for operator/support responders working in `app/support-tools`.
 - Preserve ids and timestamps from Support Tools when escalating.
 - Include structured log lines (JSON) with matching `domain`, `event`, and ids.
 - Do not broaden into infra/platform changes during Phase 1 response unless incident severity requires separate escalation.
-

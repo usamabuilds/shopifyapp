@@ -83,6 +83,32 @@ export default function SupportToolsPage() {
         </s-stack>
       </s-section>
 
+      <s-section heading="Common incident playbooks (Phase 1)">
+        <s-paragraph>
+          Use these quick guides first, then open <code>docs/PHASE1_OPERATOR_RUNBOOK.md</code> for full triage flow.
+        </s-paragraph>
+        <table>
+          <thead>
+            <tr>
+              <th>Issue</th>
+              <th>Trigger signal</th>
+              <th>First checks</th>
+              <th>Recovery action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.playbooks.map((item) => (
+              <tr key={item.id}>
+                <td>{item.title}</td>
+                <td>{item.trigger}</td>
+                <td>{item.firstChecks}</td>
+                <td>{item.recoveryAction}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </s-section>
+
       <s-section heading="Operational alerts (stuck/retry/failure hotspots)">
         {data.operationalAlerts.length === 0 ? (
           <s-banner tone="success">No current operational alerts detected.</s-banner>

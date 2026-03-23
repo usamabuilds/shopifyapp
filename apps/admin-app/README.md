@@ -38,3 +38,4 @@ pnpm build
 - Operational hardening and runbooks for Phase 1 are documented in:
   - `docs/PHASE1_HARDENING_OBSERVABILITY_RECOVERY.md`
   - `docs/PHASE1_OPERATOR_RUNBOOK.md`
+  - `docs/PHASE1_HARDENING_CHECKLIST.md`

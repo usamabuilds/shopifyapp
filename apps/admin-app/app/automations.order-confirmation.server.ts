@@ -343,6 +343,19 @@ export async function processOrderCreatedConfirmation(input: {
       },
     });
 
+    logOperationalEvent({
+      domain: "order_confirmation",
+      event: "skipped_missing_template",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "missing_order_confirmation_template",
+      metadata: {
+        orderId: order.orderId,
+      },
+    });
+
     return {
       processed: true,
       reason: "missing_template",
