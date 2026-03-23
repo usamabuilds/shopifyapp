@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
+import { logOperationalEvent } from "./observability.server";
 
 type WebhookProcessingStatus =
   | "RECEIVED"
@@ -146,9 +147,14 @@ export async function processShopifyWebhookIntake(input: {
   const isDuplicate = webhookEvent.processingStatus !== "RECEIVED";
 
   if (isDuplicate) {
-    console.info(
-      `[webhook-intake] Duplicate webhook received and skipped. topic=${topic} shop=${shop} dedupeKey=${dedupeKey}`,
-    );
+    logOperationalEvent({
+      domain: "webhook_intake",
+      event: "duplicate_suppressed",
+      shopDomain: shop,
+      webhookEventId: webhookEvent.id,
+      entityId: dedupeKey,
+      metadata: { topic },
+    });
 
     return {
       isDuplicate: true,
@@ -180,9 +186,14 @@ export async function processShopifyWebhookIntake(input: {
     },
   });
 
-  console.info(
-    `[webhook-intake] Webhook accepted. topic=${topic} shop=${shop} eventId=${webhookEvent.id}`,
-  );
+  logOperationalEvent({
+    domain: "webhook_intake",
+    event: "accepted_and_enqueued",
+    shopDomain: shop,
+    webhookEventId: webhookEvent.id,
+    entityId: dedupeKey,
+    metadata: { topic },
+  });
 
   return {
     isDuplicate: false,
@@ -218,6 +229,12 @@ export async function markWebhookIntakeProcessed(args: { webhookEventId: string 
       failureReason: null,
     },
   });
+
+  logOperationalEvent({
+    domain: "webhook_intake",
+    event: "marked_processed",
+    webhookEventId,
+  });
 }
 
 export async function markWebhookIntakeFailure(args: {
@@ -252,5 +269,13 @@ export async function markWebhookIntakeFailure(args: {
         increment: 1,
       },
     },
+  });
+
+  logOperationalEvent({
+    domain: "webhook_intake",
+    event: "marked_failed",
+    level: "error",
+    webhookEventId,
+    reason,
   });
 }

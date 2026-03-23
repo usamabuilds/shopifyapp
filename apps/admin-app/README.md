@@ -35,3 +35,6 @@ pnpm build
 - Preserve the authentication setup in `app/shopify.server.ts` and route loaders using `authenticate.admin(request)`.
 - Webhook intake now follows a verify -> persist -> normalize -> enqueue flow through `app/webhooks.shopify-intake.server.ts`.
 - Webhook intake persistence models are in `prisma/schema.prisma` (`WebhookEvent` and `WebhookQueueItem`) and are intended for async worker pickup in later phases.
+- Operational hardening and runbooks for Phase 1 are documented in:
+  - `docs/PHASE1_HARDENING_OBSERVABILITY_RECOVERY.md`
+  - `docs/PHASE1_OPERATOR_RUNBOOK.md`

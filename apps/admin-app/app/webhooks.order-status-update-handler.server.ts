@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 
 import { processOrderStatusUpdate } from "./automations.order-status-updates.server";
+import { logOperationalEvent } from "./observability.server";
 import { authenticate } from "./shopify.server";
 import {
   markWebhookIntakeFailure,
@@ -41,9 +42,15 @@ export async function handleOrderStatusUpdateWebhookAction({ request }: ActionFu
       reason,
     });
 
-    console.error(
-      `[order-status-update] webhook processing failed. shop=${shop} topic=${topic} eventId=${intake.webhookEventId} reason=${reason}`,
-    );
+    logOperationalEvent({
+      domain: "order_status_update",
+      event: "webhook_processing_failed",
+      level: "error",
+      shopDomain: shop,
+      webhookEventId: intake.webhookEventId,
+      reason,
+      metadata: { topic },
+    });
   }
 
   return new Response();

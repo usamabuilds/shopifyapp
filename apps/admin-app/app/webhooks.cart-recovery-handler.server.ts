@@ -10,6 +10,7 @@ import {
   markWebhookIntakeProcessed,
   processShopifyWebhookIntake,
 } from "./webhooks.shopify-intake.server";
+import { logOperationalEvent } from "./observability.server";
 
 export async function handleCartRecoveryWebhookAction({ request }: ActionFunctionArgs) {
   const { payload, topic, shop } = await authenticate.webhook(request);
@@ -48,9 +49,15 @@ export async function handleCartRecoveryWebhookAction({ request }: ActionFunctio
       reason,
     });
 
-    console.error(
-      `[cart-recovery] webhook processing failed. shop=${shop} topic=${topic} eventId=${intake.webhookEventId} reason=${reason}`,
-    );
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "webhook_processing_failed",
+      level: "error",
+      shopDomain: shop,
+      webhookEventId: intake.webhookEventId,
+      reason,
+      metadata: { topic },
+    });
   }
 
   return new Response();

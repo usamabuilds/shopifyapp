@@ -56,6 +56,10 @@ export default function SupportToolsPage() {
             Phase 1 limitation: recipient opt-in is not programmatically enforced per contact yet. Operators should
             verify consent scope before triggering retries or dispatch actions.
           </s-banner>
+          <s-banner tone="info">
+            Runbooks: see <code>docs/PHASE1_HARDENING_OBSERVABILITY_RECOVERY.md</code> and{" "}
+            <code>docs/PHASE1_OPERATOR_RUNBOOK.md</code> for common recovery playbooks.
+          </s-banner>
           {isLoading ? <s-banner tone="info">Refreshing support data…</s-banner> : null}
           {actionData ? (
             <s-banner tone={actionData.ok ? "success" : "warning"}>{actionData.message}</s-banner>
@@ -77,6 +81,35 @@ export default function SupportToolsPage() {
             <button type="submit">Run due campaign dispatch</button>
           </Form>
         </s-stack>
+      </s-section>
+
+      <s-section heading="Operational alerts (stuck/retry/failure hotspots)">
+        {data.operationalAlerts.length === 0 ? (
+          <s-banner tone="success">No current operational alerts detected.</s-banner>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Detected</th>
+                <th>Area</th>
+                <th>State</th>
+                <th>Detail</th>
+                <th>Recommended next action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.operationalAlerts.map((item) => (
+                <tr key={`${item.area}-${item.id}`}>
+                  <td>{new Date(item.detectedAt).toLocaleString()}</td>
+                  <td>{item.area}</td>
+                  <td>{item.state}</td>
+                  <td>{item.detail}</td>
+                  <td>{item.nextAction}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </s-section>
 
       <s-section heading="Webhook intake state">
@@ -201,6 +234,66 @@ export default function SupportToolsPage() {
                   <td>{item.actionState}</td>
                   <td>{item.outboundMessageId ?? "-"}</td>
                   <td>{new Date(item.updatedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </s-section>
+
+      <s-section heading="Campaign operational state">
+        {data.recentCampaigns.length === 0 ? (
+          <s-banner tone="info">No active/failed campaigns found.</s-banner>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Recipients (sent/failed/total)</th>
+                <th>Status reason</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.recentCampaigns.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.name}</td>
+                  <td>{item.status}</td>
+                  <td>
+                    {item.sentRecipients}/{item.failedRecipients}/{item.totalRecipients}
+                  </td>
+                  <td>{item.statusReason ?? "-"}</td>
+                  <td>{new Date(item.updatedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </s-section>
+
+      <s-section heading="Workflow run operational state">
+        {data.recentWorkflowRuns.length === 0 ? (
+          <s-banner tone="info">No pending/running/failed workflow runs found.</s-banner>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Run id</th>
+                <th>Workflow id</th>
+                <th>Status</th>
+                <th>Failure reason</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.recentWorkflowRuns.map((item) => (
+                <tr key={item.id}>
+                  <td>{item.id}</td>
+                  <td>{item.workflowId}</td>
+                  <td>{item.status}</td>
+                  <td>{item.failureReason ?? "-"}</td>
+                  <td>{new Date(item.createdAt).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import prisma from "../db.server";
 import { ensureShopFoundation } from "../models.shop.server";
+import { logOperationalEvent } from "../observability.server";
 
 export type MessageChannel = "WHATSAPP";
 export type OutboundMessageStatus =
@@ -50,6 +51,7 @@ type OutboundAttemptRecord = {
 
 type OutboundCallbackRecord = {
   id: string;
+  shopDomain: string;
   status: CallbackEventStatus;
   callbackCorrelationId: string | null;
   providerMessageId: string | null;
@@ -216,9 +218,17 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
     },
   });
 
-  console.info(
-    `[outbound] queued message id=${message.id} shop=${input.shopDomain} provider=${input.providerName}`,
-  );
+  logOperationalEvent({
+    domain: "outbound",
+    event: "queued",
+    shopDomain: input.shopDomain,
+    entityId: message.id,
+    metadata: {
+      providerName: input.providerName,
+      useCase: input.useCase,
+      channel: input.channel,
+    },
+  });
 
   return message;
 }
@@ -340,9 +350,23 @@ export async function dispatchOutboundMessage(args: {
     },
   });
 
-  console.error(
-    `[outbound] send failed id=${message.id} provider=${args.provider.providerName} code=${sendResult.code} retryClass=${classification.retryClass} retryable=${canRetry}`,
-  );
+  logOperationalEvent({
+    domain: "outbound",
+    event: canRetry ? "dispatch_failed_retry_scheduled" : "dispatch_failed_terminal",
+    level: "error",
+    shopDomain: message.shopDomain,
+    entityId: message.id,
+    reason: sendResult.message,
+    metadata: {
+      providerName: args.provider.providerName,
+      code: sendResult.code,
+      retryClass: classification.retryClass,
+      retryable: canRetry,
+      retryCount,
+      maxRetryCount: message.maxRetryCount,
+      nextRetryAt: nextRetryAt?.toISOString() ?? null,
+    },
+  });
 
   return failedMessage;
 }
@@ -420,7 +444,18 @@ export async function reconcileProviderCallback(input: {
       },
     });
 
-    console.warn(`[outbound] callback unresolved callbackId=${callback.id}`);
+    logOperationalEvent({
+      domain: "outbound",
+      event: "callback_unresolved",
+      level: "warn",
+      shopDomain: callback.shopDomain,
+      entityId: callback.id,
+      reason: "No matching outbound message was found for callback correlation.",
+      metadata: {
+        callbackCorrelationId: callback.callbackCorrelationId,
+        providerMessageId: callback.providerMessageId,
+      },
+    });
     return null;
   }
 
