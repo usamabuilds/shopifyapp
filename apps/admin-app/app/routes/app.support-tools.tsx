@@ -52,6 +52,10 @@ export default function SupportToolsPage() {
             Merchant-safe guidance: if a failure reason references missing templates or disabled features, update
             <Link to="/app/settings"> settings</Link>, then re-run only the relevant recovery action.
           </s-banner>
+          <s-banner tone="warning">
+            Phase 1 limitation: recipient opt-in is not programmatically enforced per contact yet. Operators should
+            verify consent scope before triggering retries or dispatch actions.
+          </s-banner>
           {isLoading ? <s-banner tone="info">Refreshing support data…</s-banner> : null}
           {actionData ? (
             <s-banner tone={actionData.ok ? "success" : "warning"}>{actionData.message}</s-banner>

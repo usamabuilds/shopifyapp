@@ -102,6 +102,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (intent === "create-campaign-schedule") {
     const input = parseCreateCampaignForm(formData);
+    const settings = await getBroadcastCampaignSettings(session.shop);
+    const effectiveTemplateKey = input.templateKey ?? settings.defaultTemplateKey;
+
+    if (!effectiveTemplateKey) {
+      return {
+        saved: "campaign-scheduled" as const,
+        blocked: true as const,
+        message: "Cannot schedule campaign without a template key (campaign override or campaign default).",
+      };
+    }
+
+    if (input.audienceType === "MANUAL_CONTACTS" && input.manualRecipients.length === 0) {
+      return {
+        saved: "campaign-scheduled" as const,
+        blocked: true as const,
+        message: "Cannot schedule manual-audience campaign without valid manual recipients.",
+      };
+    }
+
+    if (!input.scheduleAt || input.scheduleAt.getTime() <= Date.now()) {
+      return {
+        saved: "campaign-scheduled" as const,
+        blocked: true as const,
+        message: "Cannot schedule campaign without a future schedule time.",
+      };
+    }
 
     await createBroadcastCampaign({
       shopDomain: session.shop,
@@ -116,6 +142,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const campaignId = formData.get("campaignId");
 
     if (typeof campaignId === "string" && campaignId.length > 0) {
+      const [settings, campaigns] = await Promise.all([
+        getBroadcastCampaignSettings(session.shop),
+        listBroadcastCampaigns(session.shop),
+      ]);
+      const campaign = campaigns.find((item) => item.id === campaignId);
+      const effectiveTemplateKey = campaign?.templateKey ?? settings.defaultTemplateKey;
+
+      if (!effectiveTemplateKey) {
+        return {
+          saved: "campaign-send-now" as const,
+          blocked: true as const,
+          message: "Cannot queue send now without a template key on campaign or campaign defaults.",
+        };
+      }
+
       await queueBroadcastCampaign({
         campaignId,
         shopDomain: session.shop,
@@ -138,12 +179,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       typeof scheduleAt === "string" && scheduleAt.length > 0 ? new Date(scheduleAt) : null;
 
     if (typeof campaignId === "string" && campaignId.length > 0) {
+      if (!parsedScheduleAt || Number.isNaN(parsedScheduleAt.getTime()) || parsedScheduleAt.getTime() <= Date.now()) {
+        return {
+          saved: "campaign-rescheduled" as const,
+          blocked: true as const,
+          message: "Cannot update schedule without a valid future datetime.",
+        };
+      }
+
       await queueBroadcastCampaign({
         campaignId,
         shopDomain: session.shop,
         mode: "schedule",
-        scheduleAt:
-          parsedScheduleAt && !Number.isNaN(parsedScheduleAt.getTime()) ? parsedScheduleAt : null,
+        scheduleAt: parsedScheduleAt,
       });
     }
 
@@ -166,6 +214,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const input = parseCreateCampaignForm(formData);
+  const settings = await getBroadcastCampaignSettings(session.shop);
+  const effectiveTemplateKey = input.templateKey ?? settings.defaultTemplateKey;
+
+  if (!effectiveTemplateKey) {
+    return {
+      saved: "campaign-send-now" as const,
+      blocked: true as const,
+      message: "Cannot send campaign without a template key (campaign override or campaign default).",
+    };
+  }
+
+  if (input.audienceType === "MANUAL_CONTACTS" && input.manualRecipients.length === 0) {
+    return {
+      saved: "campaign-send-now" as const,
+      blocked: true as const,
+      message: "Cannot send manual-audience campaign without valid manual recipients.",
+    };
+  }
 
   await createBroadcastCampaign({
     shopDomain: session.shop,
@@ -206,6 +272,10 @@ export default function CampaignsPage() {
         <s-paragraph>
           Configure queue behavior and defaults. Existing persisted campaigns remain manageable below.
         </s-paragraph>
+        <s-banner tone="info">
+          Phase 1 assumption: broadcast campaigns are marketing sends and must target recipients with valid
+          marketing opt-in handled by merchant operations.
+        </s-banner>
 
         {!settings.enabled ? (
           <s-banner tone="warning">
@@ -316,13 +386,25 @@ export default function CampaignsPage() {
           <s-banner tone="success">Campaign draft saved.</s-banner>
         ) : null}
         {actionData?.saved === "campaign-scheduled" ? (
-          <s-banner tone="success">Campaign scheduled.</s-banner>
+          actionData.blocked ? (
+            <s-banner tone="critical">{actionData.message}</s-banner>
+          ) : (
+            <s-banner tone="success">Campaign scheduled.</s-banner>
+          )
         ) : null}
         {actionData?.saved === "campaign-send-now" ? (
-          <s-banner tone="success">Campaign queued for send now.</s-banner>
+          actionData.blocked ? (
+            <s-banner tone="critical">{actionData.message}</s-banner>
+          ) : (
+            <s-banner tone="success">Campaign queued for send now.</s-banner>
+          )
         ) : null}
         {actionData?.saved === "campaign-rescheduled" ? (
-          <s-banner tone="success">Campaign schedule updated.</s-banner>
+          actionData.blocked ? (
+            <s-banner tone="critical">{actionData.message}</s-banner>
+          ) : (
+            <s-banner tone="success">Campaign schedule updated.</s-banner>
+          )
         ) : null}
         {actionData?.saved === "campaign-duplicated" ? (
           <s-banner tone="success">Campaign duplicated as draft.</s-banner>

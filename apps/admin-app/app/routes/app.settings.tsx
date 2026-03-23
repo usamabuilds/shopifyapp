@@ -221,6 +221,10 @@ export default function SettingsPage() {
 
       <s-section heading="Merchant-safe guidance">
         <s-stack direction="block" gap="small">
+          <s-banner tone="info">
+            Phase 1 assumption: this foundation does not store per-recipient legal consent yet. Merchant/operators
+            must ensure utility vs marketing eligibility before enabling sends.
+          </s-banner>
           <s-paragraph>
             If sends fail with missing templates, update template keys in Templates/Automations first, then verify
             processing in <Link to="/app/support-tools">Support tools</Link>.
@@ -228,6 +232,10 @@ export default function SettingsPage() {
           <s-paragraph>
             If campaigns are paused, switch campaign enablement back on from <Link to="/app/campaigns">Campaigns</Link>{" "}
             before scheduling new sends.
+          </s-paragraph>
+          <s-paragraph>
+            Internal references: <code>docs/PHASE1_MESSAGE_CATEGORY_MAPPING.md</code> and{" "}
+            <code>docs/PHASE1_COMPLIANCE_SAFEGUARDS.md</code>.
           </s-paragraph>
         </s-stack>
       </s-section>
