@@ -8,9 +8,12 @@ Establish a practical QA baseline for existing admin app foundations without int
 
 ## Artifacts in this phase
 
-- `qa/phase1-scenarios.json` – scenario matrix grouped by feature area, with scenario type and code evidence.
-- `qa/fixtures/scenario-fixtures.ts` – reusable payload fixtures for webhook-driven scenario validation.
-- `qa/scripts/validate-phase1-scenarios.mjs` – consistency gate that validates matrix completeness and evidence paths.
+- `qa/phase1-scenarios.json` – scenario coverage definitions grouped by feature area.
+- `qa/PHASE1_TEST_MATRIX.md` – practical matrix view for feature-level scenario inventory.
+- `qa/fixtures/scenario-fixtures.ts` – reusable payload fixtures and fixture lookup helpers for webhook-driven scenarios.
+- `qa/scripts/validate-phase1-scenarios.mjs` – matrix consistency gate (required scenario types + evidence files).
+- `qa/scripts/run-phase1-validation.mjs` – scenario-level validation run that produces `qa/PHASE1_VALIDATION_RESULTS.md`.
+- `qa/PHASE1_VALIDATION_RESULTS.md` – generated validation snapshot for all covered scenarios.
 
 ## Coverage matrix summary
 
@@ -28,18 +31,13 @@ Establish a practical QA baseline for existing admin app foundations without int
 
 ## Scenario execution approach
 
-Given this environment has no live Shopify event stream, no provider credentials, and no seeded runtime DB, scenario validation in Phase 1 was executed through:
+Given this environment has no live Shopify event stream, no provider credentials, and no seeded runtime DB, scenario validation in Phase 1 is executed through:
 
 1. **Code-path validation** against current route/server flows tied to each scenario.
 2. **Fixture readiness checks** for representative webhook payloads and duplicate suppression cases.
 3. **Matrix consistency automation** using `node qa/scripts/validate-phase1-scenarios.mjs`.
-4. **Quality gates** via lint + typecheck.
-
-## Validation result snapshot
-
-- Scenario matrix gate: **PASS**
-- Lint gate (`pnpm lint`): **PASS**
-- Type gate (`pnpm typecheck`): **PASS**
+4. **Scenario-level validation report generation** using `node qa/scripts/run-phase1-validation.mjs`.
+5. **Quality gates** via lint + typecheck.
 
 ## Known gaps / caveats discovered
 

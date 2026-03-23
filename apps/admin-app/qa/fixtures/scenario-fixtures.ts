@@ -6,7 +6,7 @@ export type ScenarioFixture = {
   payload: Record<string, unknown>;
 };
 
-export const scenarioFixtures: ScenarioFixture[] = [
+const fixtures: ScenarioFixture[] = [
   {
     name: "order-created-paid-happy-path",
     topic: "orders/create",
@@ -59,6 +59,21 @@ export const scenarioFixtures: ScenarioFixture[] = [
     },
   },
 ];
+
+export const scenarioFixtures = fixtures;
+
+export function getScenarioFixture(name: string): ScenarioFixture {
+  const fixture = scenarioFixtures.find((candidate) => candidate.name === name);
+  if (!fixture) {
+    throw new Error(`Unknown scenario fixture '${name}'.`);
+  }
+
+  return structuredClone(fixture);
+}
+
+export function listScenarioFixtureNames(): string[] {
+  return scenarioFixtures.map((fixture) => fixture.name);
+}
 
 export const duplicateSuppressionCases = [
   {
