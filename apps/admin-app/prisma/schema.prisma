@@ -131,6 +131,7 @@ model OutboundMessage {
   orderConfirmations    OrderConfirmation[]
   orderStatusUpdates    OrderStatusUpdate[]
   campaignRecipients    BroadcastCampaignRecipient[]
+  cartRecoveries        CartRecovery[]
   shop                  Shop                     @relation(fields: [shopDomain], references: [shopDomain], onDelete: Cascade)
 
   @@index([shopDomain, status, createdAt])
