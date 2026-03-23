@@ -51,3 +51,13 @@ Practical launch assets for listing/review/onboarding/support (foundation-accura
 - `docs/launch/PHASE1_INTERNAL_LAUNCH_CHECKLIST.md`
 - `docs/launch/PHASE1_SUPPORT_RESPONSE_COLLATERAL.md`
 
+## Phase 1 beta-cut / launch prep package
+
+For final beta-cut readiness, controlled launch operation, feedback capture, and Phase 1.1 backlog prep, use:
+
+- `docs/launch/PHASE1_BETA_CUT_CHECKLIST.md`
+- `docs/launch/PHASE1_BETA_GO_NO_GO_REVIEW.md`
+- `docs/launch/PHASE1_BETA_COHORT_ONBOARDING_TRACKER.md`
+- `docs/launch/PHASE1_LAUNCH_MONITORING_FEEDBACK_LOG.md`
+- `docs/launch/PHASE1_POST_LAUNCH_REVIEW_TEMPLATE.md`
+- `docs/launch/PHASE1_1_BACKLOG_STRUCTURE.md`
