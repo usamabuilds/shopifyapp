@@ -249,6 +249,18 @@ export async function dispatchOutboundMessage(args: {
 
   const callbackCorrelationId = message.callbackCorrelationId ?? buildCallbackCorrelationId(message.id);
 
+  logOperationalEvent({
+    domain: "outbound",
+    event: "dispatch_started",
+    shopDomain: message.shopDomain,
+    entityId: message.id,
+    metadata: {
+      providerName: args.provider.providerName,
+      retryCount: message.retryCount,
+      maxRetryCount: message.maxRetryCount,
+    },
+  });
+
   await db.outboundMessage.update({
     where: { id: message.id },
     data: {
@@ -293,7 +305,7 @@ export async function dispatchOutboundMessage(args: {
       },
     });
 
-    return db.outboundMessage.update({
+    const sentMessage = await db.outboundMessage.update({
       where: { id: message.id },
       data: {
         status: "SENT" satisfies OutboundMessageStatus,
@@ -304,6 +316,20 @@ export async function dispatchOutboundMessage(args: {
         lockedAt: null,
       },
     });
+
+    logOperationalEvent({
+      domain: "outbound",
+      event: "dispatch_succeeded",
+      shopDomain: message.shopDomain,
+      entityId: message.id,
+      metadata: {
+        providerName: args.provider.providerName,
+        providerMessageId: sendResult.providerMessageId,
+        attemptNumber,
+      },
+    });
+
+    return sentMessage;
   }
 
   const classification = classifyProviderFailure(sendResult);
@@ -395,7 +421,7 @@ export async function recordProviderCallbackEvent(input: {
 
   const dedupeKey = createHash("sha256").update(dedupeFingerprint).digest("hex");
 
-  return db.outboundMessageCallback.upsert({
+  const callbackRecord = await db.outboundMessageCallback.upsert({
     where: { dedupeKey },
     update: {},
     create: {
@@ -411,6 +437,21 @@ export async function recordProviderCallbackEvent(input: {
       status: "RECEIVED" satisfies CallbackEventStatus,
     },
   });
+
+  logOperationalEvent({
+    domain: "outbound",
+    event: "callback_received",
+    shopDomain: input.shopDomain,
+    entityId: callbackRecord.id,
+    metadata: {
+      providerName: input.providerName,
+      eventType: input.eventType,
+      callbackCorrelationId: input.callbackCorrelationId ?? null,
+      providerMessageId: input.providerMessageId ?? null,
+    },
+  });
+
+  return callbackRecord;
 }
 
 export async function reconcileProviderCallback(input: {
@@ -478,6 +519,18 @@ export async function reconcileProviderCallback(input: {
       status: "RECONCILED" satisfies CallbackEventStatus,
       reconciledMessageId: message.id,
       reconciliationError: null,
+    },
+  });
+
+  logOperationalEvent({
+    domain: "outbound",
+    event: "callback_reconciled",
+    shopDomain: callback.shopDomain,
+    entityId: callback.id,
+    reason: input.reason ?? null,
+    metadata: {
+      messageId: message.id,
+      resolution: input.resolution,
     },
   });
 

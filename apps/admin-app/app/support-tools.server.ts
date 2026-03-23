@@ -150,6 +150,20 @@ export type SupportOperationalAlert = {
   nextAction: string;
 };
 
+export type SupportPlaybookItem = {
+  id:
+    | "webhook_failures"
+    | "stuck_queue_or_retry"
+    | "bad_template_config"
+    | "failed_outbound_dispatch"
+    | "duplicate_suppression_confusion"
+    | "campaign_misconfiguration";
+  title: string;
+  trigger: string;
+  firstChecks: string;
+  recoveryAction: string;
+};
+
 function describeWebhookFailure(reason: string | null): string {
   if (!reason) {
     return "This event failed without a recorded reason. Review the event payload and worker logs.";
@@ -386,6 +400,51 @@ export async function getSupportToolsSnapshot(shopDomain: string) {
     .sort((a, b) => b.detectedAt.getTime() - a.detectedAt.getTime())
     .slice(0, 14);
 
+  const playbooks: SupportPlaybookItem[] = [
+    {
+      id: "webhook_failures",
+      title: "Webhook failures",
+      trigger: "Webhook status is FAILED or DEAD_LETTER.",
+      firstChecks: "Inspect topic, queue lastError, and automation prerequisites (ids/templates).",
+      recoveryAction: "Correct config/payload issue first, then run relevant dispatcher action.",
+    },
+    {
+      id: "stuck_queue_or_retry",
+      title: "Queue-style stuck states",
+      trigger: "Operational alert shows webhook_queue or outbound_retry.",
+      firstChecks: "Capture ids and review recent structured logs for matching domain + entity id.",
+      recoveryAction: "Fix provider/config root cause, then re-run scoped recovery action.",
+    },
+    {
+      id: "bad_template_config",
+      title: "Bad template config",
+      trigger: "State includes SKIPPED_MISSING_TEMPLATE or missing_template reason.",
+      firstChecks: "Validate template mapping in settings for each use case/status.",
+      recoveryAction: "Update mappings, then trigger only the affected dispatch path.",
+    },
+    {
+      id: "failed_outbound_dispatch",
+      title: "Failed outbound dispatch",
+      trigger: "Outbound status is FAILED/DEAD_LETTER with provider reason.",
+      firstChecks: "Check retry class, retry count, and provider/credential readiness.",
+      recoveryAction: "For transient errors wait/retry, for hard errors correct input/provider setup.",
+    },
+    {
+      id: "duplicate_suppression_confusion",
+      title: "Duplicate suppression confusion",
+      trigger: "Expected send did not occur and duplicate_suppressed appears in logs.",
+      firstChecks: "Locate original event/message id and determine its final status.",
+      recoveryAction: "Fix original root cause before any replay to avoid unintended duplicate sends.",
+    },
+    {
+      id: "campaign_misconfiguration",
+      title: "Campaign misconfiguration",
+      trigger: "Campaign shows FAILED or long-lived SCHEDULED/IN_PROGRESS.",
+      firstChecks: "Review campaign status reason, audience shape, and template configuration.",
+      recoveryAction: "Fix campaign config and run campaign dispatcher from support actions.",
+    },
+  ];
+
   return {
     recentWebhooks,
     recentOutboundMessages,
@@ -394,6 +453,7 @@ export async function getSupportToolsSnapshot(shopDomain: string) {
     failures,
     traces,
     operationalAlerts,
+    playbooks,
   };
 }
 

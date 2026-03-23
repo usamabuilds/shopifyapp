@@ -392,6 +392,20 @@ export async function processOrderStatusUpdate(input: {
       },
     });
 
+    logOperationalEvent({
+      domain: "order_status_update",
+      event: "skipped_disabled",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "order_status_updates_disabled",
+      metadata: {
+        orderId: event.orderId,
+        statusType: event.statusType,
+      },
+    });
+
     return { processed: true, reason: "order_status_updates_disabled", orderStatusUpdateId: skipped.id };
   }
 
@@ -402,6 +416,20 @@ export async function processOrderStatusUpdate(input: {
         state: "SKIPPED_NOT_ELIGIBLE" satisfies OrderStatusUpdateState,
         stateReason: "missing_recipient_phone",
         processedAt: new Date(),
+      },
+    });
+
+    logOperationalEvent({
+      domain: "order_status_update",
+      event: "skipped_missing_recipient",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "missing_recipient_phone",
+      metadata: {
+        orderId: event.orderId,
+        statusType: event.statusType,
       },
     });
 
@@ -417,6 +445,20 @@ export async function processOrderStatusUpdate(input: {
         state: "SKIPPED_MISSING_TEMPLATE" satisfies OrderStatusUpdateState,
         stateReason: `missing_template_for_${event.statusType.toLowerCase()}`,
         processedAt: new Date(),
+      },
+    });
+
+    logOperationalEvent({
+      domain: "order_status_update",
+      event: "skipped_missing_template",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: skipped.stateReason,
+      metadata: {
+        orderId: event.orderId,
+        statusType: event.statusType,
       },
     });
 

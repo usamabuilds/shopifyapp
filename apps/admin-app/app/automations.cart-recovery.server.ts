@@ -393,7 +393,7 @@ export async function processCheckoutUpdatedForRecovery(input: {
   }
 
   if (!settings.enabled) {
-    await db.cartRecovery.update({
+    const skipped = await db.cartRecovery.update({
       where: { id: recovery.id },
       data: {
         state: "SKIPPED_DISABLED" satisfies CartRecoveryState,
@@ -403,11 +403,24 @@ export async function processCheckoutUpdatedForRecovery(input: {
       },
     });
 
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "skipped_disabled",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "cart_recovery_disabled",
+      metadata: {
+        checkoutId: event.checkoutId,
+      },
+    });
+
     return { processed: true, reason: "cart_recovery_disabled", recoveryId: recovery.id };
   }
 
   if (event.checkoutCompletedAt) {
-    await db.cartRecovery.update({
+    const skipped = await db.cartRecovery.update({
       where: { id: recovery.id },
       data: {
         state: "SKIPPED_NOT_ELIGIBLE" satisfies CartRecoveryState,
@@ -417,11 +430,24 @@ export async function processCheckoutUpdatedForRecovery(input: {
       },
     });
 
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "skipped_checkout_completed",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "checkout_already_completed",
+      metadata: {
+        checkoutId: event.checkoutId,
+      },
+    });
+
     return { processed: true, reason: "checkout_already_completed", recoveryId: recovery.id };
   }
 
   if (!event.recipientPhone) {
-    await db.cartRecovery.update({
+    const skipped = await db.cartRecovery.update({
       where: { id: recovery.id },
       data: {
         state: "SKIPPED_NOT_ELIGIBLE" satisfies CartRecoveryState,
@@ -431,17 +457,43 @@ export async function processCheckoutUpdatedForRecovery(input: {
       },
     });
 
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "skipped_missing_recipient",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "missing_recipient_phone",
+      metadata: {
+        checkoutId: event.checkoutId,
+      },
+    });
+
     return { processed: true, reason: "missing_recipient_phone", recoveryId: recovery.id };
   }
 
   if (!settings.templateKey) {
-    await db.cartRecovery.update({
+    const skipped = await db.cartRecovery.update({
       where: { id: recovery.id },
       data: {
         state: "SKIPPED_MISSING_TEMPLATE" satisfies CartRecoveryState,
         stateReason: "missing_cart_recovery_template",
         processedAt: new Date(),
         lastEvaluatedAt: new Date(),
+      },
+    });
+
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "skipped_missing_template",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: "missing_cart_recovery_template",
+      metadata: {
+        checkoutId: event.checkoutId,
       },
     });
 
@@ -484,7 +536,7 @@ export async function dispatchDueCartRecoveries(input: { shopDomain: string; lim
 
   for (const recovery of dueRecoveries) {
     if (!recovery.recipientPhone) {
-      await db.cartRecovery.update({
+      const skipped = await db.cartRecovery.update({
         where: { id: recovery.id },
         data: {
           state: "SKIPPED_NOT_ELIGIBLE" satisfies CartRecoveryState,
@@ -493,17 +545,39 @@ export async function dispatchDueCartRecoveries(input: { shopDomain: string; lim
           lastEvaluatedAt: new Date(),
         },
       });
+      logOperationalEvent({
+        domain: "cart_recovery",
+        event: "dispatch_skipped_missing_recipient",
+        level: "warn",
+        shopDomain: input.shopDomain,
+        entityId: skipped.id,
+        reason: "missing_recipient_phone",
+        metadata: {
+          checkoutId: recovery.checkoutId,
+        },
+      });
       continue;
     }
 
     if (!recovery.templateKey) {
-      await db.cartRecovery.update({
+      const skipped = await db.cartRecovery.update({
         where: { id: recovery.id },
         data: {
           state: "SKIPPED_MISSING_TEMPLATE" satisfies CartRecoveryState,
           stateReason: "missing_cart_recovery_template",
           processedAt: new Date(),
           lastEvaluatedAt: new Date(),
+        },
+      });
+      logOperationalEvent({
+        domain: "cart_recovery",
+        event: "dispatch_skipped_missing_template",
+        level: "warn",
+        shopDomain: input.shopDomain,
+        entityId: skipped.id,
+        reason: "missing_cart_recovery_template",
+        metadata: {
+          checkoutId: recovery.checkoutId,
         },
       });
       continue;
@@ -551,7 +625,7 @@ export async function dispatchDueCartRecoveries(input: { shopDomain: string; lim
 
     const isSent = dispatchResult.status === "SENT" || dispatchResult.status === "DELIVERED";
 
-    await db.cartRecovery.update({
+    const finalized = await db.cartRecovery.update({
       where: { id: recovery.id },
       data: {
         state: isSent ? ("SENT" satisfies CartRecoveryState) : ("FAILED" satisfies CartRecoveryState),
@@ -560,6 +634,19 @@ export async function dispatchDueCartRecoveries(input: { shopDomain: string; lim
         processedAt: new Date(),
         failedAt: isSent ? null : new Date(),
         lastEvaluatedAt: new Date(),
+      },
+    });
+
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: isSent ? "dispatch_succeeded" : "dispatch_failed",
+      level: isSent ? "info" : "error",
+      shopDomain: input.shopDomain,
+      entityId: finalized.id,
+      reason: finalized.stateReason,
+      metadata: {
+        checkoutId: recovery.checkoutId,
+        outboundMessageId: outboundMessage.id,
       },
     });
 
