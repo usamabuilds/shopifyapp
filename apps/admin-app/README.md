@@ -39,3 +39,15 @@ pnpm build
   - `docs/PHASE1_HARDENING_OBSERVABILITY_RECOVERY.md`
   - `docs/PHASE1_OPERATOR_RUNBOOK.md`
   - `docs/PHASE1_HARDENING_CHECKLIST.md`
+
+## Phase 1 launch/listing/support collateral
+
+Practical launch assets for listing/review/onboarding/support (foundation-accurate, no feature expansion) are in:
+
+- `docs/launch/PHASE1_LISTING_COPY_DRAFT.md`
+- `docs/launch/PHASE1_REVIEWER_TESTER_NOTES.md`
+- `docs/launch/PHASE1_FIRST_RUN_ONBOARDING_HELP.md`
+- `docs/launch/PHASE1_FAQ_TROUBLESHOOTING.md`
+- `docs/launch/PHASE1_INTERNAL_LAUNCH_CHECKLIST.md`
+- `docs/launch/PHASE1_SUPPORT_RESPONSE_COLLATERAL.md`
+
