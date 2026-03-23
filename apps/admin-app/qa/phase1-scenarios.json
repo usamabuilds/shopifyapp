@@ -1,0 +1,308 @@
+{
+  "phase": "phase-1",
+  "generatedAt": "2026-03-23",
+  "featureAreas": [
+    {
+      "feature": "onboarding_settings",
+      "description": "Merchant setup/readiness and settings persistence",
+      "scenarios": [
+        {
+          "id": "ONB-HP-001",
+          "type": "happy_path",
+          "title": "Settings save updates onboarding readiness",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.settings.tsx", "app/models.shop.server.ts"]
+        },
+        {
+          "id": "ONB-ED-002",
+          "type": "edge_case",
+          "title": "Blank settings values persist safely and show warnings",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.settings.tsx", "app/models.shop.server.ts"]
+        },
+        {
+          "id": "ONB-FL-003",
+          "type": "failure_state",
+          "title": "Campaign disabled warning is visible in settings context",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.settings.tsx", "app/campaigns.broadcast.server.ts"]
+        }
+      ]
+    },
+    {
+      "feature": "template_library_preview",
+      "description": "Template mapping health and variable preview behavior",
+      "scenarios": [
+        {
+          "id": "TPL-HP-001",
+          "type": "happy_path",
+          "title": "Mapped templates resolve for each existing automation use case",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.templates.tsx"]
+        },
+        {
+          "id": "TPL-ED-002",
+          "type": "edge_case",
+          "title": "Preview surfaces unresolved template variables",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.templates.tsx"]
+        },
+        {
+          "id": "TPL-FL-003",
+          "type": "failure_state",
+          "title": "Missing template keys and library misses are highlighted",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.templates.tsx"]
+        }
+      ]
+    },
+    {
+      "feature": "order_confirmation",
+      "description": "Order created processing and outbound queueing",
+      "scenarios": [
+        {
+          "id": "OC-HP-001",
+          "type": "happy_path",
+          "title": "Eligible paid order queues and dispatches confirmation",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-confirmation.server.ts", "app/messaging/outbound-messaging.server.ts"]
+        },
+        {
+          "id": "OC-ED-002",
+          "type": "edge_case",
+          "title": "Missing recipient phone skips with explicit reason",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-confirmation.server.ts"]
+        },
+        {
+          "id": "OC-DP-003",
+          "type": "duplicate_suppression",
+          "title": "Repeat order-created events suppress duplicate processing",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-confirmation.server.ts"]
+        },
+        {
+          "id": "OC-FL-004",
+          "type": "failure_state",
+          "title": "Provider dispatch failure marks confirmation as failed",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-confirmation.server.ts", "app/messaging/outbound-messaging.server.ts"]
+        }
+      ]
+    },
+    {
+      "feature": "order_status_updates",
+      "description": "Status transitions from orders/fulfillments topics",
+      "scenarios": [
+        {
+          "id": "OSU-HP-001",
+          "type": "happy_path",
+          "title": "Mapped fulfillment/order updates queue status message",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-status-updates.server.ts"]
+        },
+        {
+          "id": "OSU-ED-002",
+          "type": "edge_case",
+          "title": "Unmapped status transitions skip with status_not_mapped reason",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-status-updates.server.ts"]
+        },
+        {
+          "id": "OSU-DP-003",
+          "type": "duplicate_suppression",
+          "title": "Dedupe key prevents duplicate send for same order/status type",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-status-updates.server.ts"]
+        },
+        {
+          "id": "OSU-FL-004",
+          "type": "failure_state",
+          "title": "Missing template routes to SKIPPED_MISSING_TEMPLATE",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.order-status-updates.server.ts"]
+        }
+      ]
+    },
+    {
+      "feature": "cart_recovery",
+      "description": "Checkout abandonment and delayed dispatch",
+      "scenarios": [
+        {
+          "id": "CR-HP-001",
+          "type": "happy_path",
+          "title": "Abandoned checkout creates due recovery and dispatches when due",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.cart-recovery.server.ts"]
+        },
+        {
+          "id": "CR-ED-002",
+          "type": "edge_case",
+          "title": "Recovered checkout transitions to RECOVERED and avoids send",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.cart-recovery.server.ts"]
+        },
+        {
+          "id": "CR-DP-003",
+          "type": "duplicate_suppression",
+          "title": "Duplicate checkout events collapse into suppressed state",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.cart-recovery.server.ts"]
+        },
+        {
+          "id": "CR-FL-004",
+          "type": "failure_state",
+          "title": "Missing template key is recorded before dispatch",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/automations.cart-recovery.server.ts"]
+        }
+      ]
+    },
+    {
+      "feature": "broadcast_campaigns",
+      "description": "Campaign audience resolution and dispatch controls",
+      "scenarios": [
+        {
+          "id": "BC-HP-001",
+          "type": "happy_path",
+          "title": "Due scheduled campaign dispatches to deduped recipients",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/campaigns.broadcast.server.ts"]
+        },
+        {
+          "id": "BC-ED-002",
+          "type": "edge_case",
+          "title": "Manual audience parsing trims/normalizes recipient list",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/campaigns.broadcast.server.ts"]
+        },
+        {
+          "id": "BC-DP-003",
+          "type": "duplicate_suppression",
+          "title": "Audience dedupe removes repeated phone numbers",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/campaigns.broadcast.server.ts"]
+        },
+        {
+          "id": "BC-FL-004",
+          "type": "failure_state",
+          "title": "Disabled campaign settings block dispatcher execution",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/campaigns.broadcast.server.ts", "app/routes/app.campaigns.tsx"]
+        }
+      ]
+    },
+    {
+      "feature": "workflow_builder",
+      "description": "Definition validation, status transitions, and preview runs",
+      "scenarios": [
+        {
+          "id": "WF-HP-001",
+          "type": "happy_path",
+          "title": "Valid draft workflow saves and previews execution steps",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/workflows.builder.server.ts", "app/routes/app.workflows.tsx"]
+        },
+        {
+          "id": "WF-ED-002",
+          "type": "edge_case",
+          "title": "Malformed definition JSON safely falls back to empty blocks",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/workflows.builder.server.ts"]
+        },
+        {
+          "id": "WF-FL-003",
+          "type": "failure_state",
+          "title": "Invalid workflow is rejected for publish transition",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/workflows.builder.server.ts", "app/routes/app.workflows.tsx"]
+        }
+      ]
+    },
+    {
+      "feature": "analytics_views",
+      "description": "Scope filtering, summaries, and recent record visibility",
+      "scenarios": [
+        {
+          "id": "AN-HP-001",
+          "type": "happy_path",
+          "title": "Analytics loader returns scoped rollups across all supported domains",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.analytics.tsx"]
+        },
+        {
+          "id": "AN-ED-002",
+          "type": "edge_case",
+          "title": "Unknown scope parameter defaults to 30d safely",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.analytics.tsx"]
+        },
+        {
+          "id": "AN-FL-003",
+          "type": "failure_state",
+          "title": "Numeric parsing guards avoid NaN in revenue and KPI summaries",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.analytics.tsx"]
+        }
+      ]
+    },
+    {
+      "feature": "support_tools_failure_visibility",
+      "description": "Failure triage guidance and traceability",
+      "scenarios": [
+        {
+          "id": "SUP-HP-001",
+          "type": "happy_path",
+          "title": "Support snapshot returns webhooks, outbound state, failures, and traces",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/support-tools.server.ts", "app/routes/app.support-tools.tsx"]
+        },
+        {
+          "id": "SUP-ED-002",
+          "type": "edge_case",
+          "title": "Failure helper text adapts to missing reason and common template/provider errors",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/support-tools.server.ts"]
+        },
+        {
+          "id": "SUP-FL-003",
+          "type": "failure_state",
+          "title": "Unsupported support action is rejected without mutation",
+          "validationMethod": "codepath",
+          "status": "covered",
+          "evidenceFiles": ["app/routes/app.support-tools.tsx"]
+        }
+      ]
+    }
+  ]
+}
