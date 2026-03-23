@@ -17,7 +17,10 @@
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
     "vite": "vite",
-    "typecheck": "react-router typegen && tsc --noEmit"
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "qa:phase1:matrix": "node qa/scripts/validate-phase1-scenarios.mjs",
+    "qa:phase1:validate": "node qa/scripts/run-phase1-validation.mjs",
+    "qa:phase1": "pnpm qa:phase1:matrix && pnpm qa:phase1:validate"
   },
   "type": "module",
   "engines": {
