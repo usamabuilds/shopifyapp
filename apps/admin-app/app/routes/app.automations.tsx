@@ -78,27 +78,51 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = formData.get("intent");
 
   if (intent === "save-order-status-settings") {
-    await updateOrderStatusUpdateSettings(
-      session.shop,
-      parseOrderStatusUpdateSettingsForm(formData),
-    );
+    const input = parseOrderStatusUpdateSettingsForm(formData);
+    const missingStatusTemplates = Object.entries(input.templateByStatus)
+      .filter(([, value]) => !value)
+      .map(([status]) => status);
+
+    if (input.enabled && missingStatusTemplates.length > 0) {
+      return {
+        saved: "order-status" as const,
+        blocked: true as const,
+        message: `Cannot enable order status updates until every status has a template key. Missing: ${missingStatusTemplates.join(", ")}.`,
+      };
+    }
+
+    await updateOrderStatusUpdateSettings(session.shop, input);
 
     return { saved: "order-status" as const };
   }
 
   if (intent === "save-cart-recovery-settings") {
-    await updateCartRecoverySettings(
-      session.shop,
-      parseCartRecoverySettingsForm(formData),
-    );
+    const input = parseCartRecoverySettingsForm(formData);
+
+    if (input.enabled && !input.templateKey) {
+      return {
+        saved: "cart-recovery" as const,
+        blocked: true as const,
+        message: "Cannot enable cart recovery without a template key.",
+      };
+    }
+
+    await updateCartRecoverySettings(session.shop, input);
 
     return { saved: "cart-recovery" as const };
   }
 
-  await updateOrderConfirmationSettings(
-    session.shop,
-    parseOrderConfirmationSettingsForm(formData),
-  );
+  const input = parseOrderConfirmationSettingsForm(formData);
+
+  if (input.enabled && !input.templateKey) {
+    return {
+      saved: "order-confirmation" as const,
+      blocked: true as const,
+      message: "Cannot enable order confirmation without a template key.",
+    };
+  }
+
+  await updateOrderConfirmationSettings(session.shop, input);
 
   return { saved: "order-confirmation" as const };
 };
@@ -144,6 +168,10 @@ export default function AutomationsPage() {
           Review live and draft-ready automation foundations, inspect recent activity, and safely update
           merchant-facing settings.
         </s-paragraph>
+        <s-banner tone="info">
+          Phase 1 assumption: utility sends (order confirmation/status) and marketing sends (cart recovery)
+          require merchant-managed customer opt-in validation before enablement.
+        </s-banner>
 
         <table>
           <thead>
@@ -230,7 +258,11 @@ export default function AutomationsPage() {
             </Form>
 
             {actionData?.saved === "order-confirmation" ? (
-              <s-banner tone="success">Order confirmation settings saved.</s-banner>
+              actionData.blocked ? (
+                <s-banner tone="critical">{actionData.message}</s-banner>
+              ) : (
+                <s-banner tone="success">Order confirmation settings saved.</s-banner>
+              )
             ) : null}
           </s-section>
 
@@ -336,7 +368,11 @@ export default function AutomationsPage() {
             </Form>
 
             {actionData?.saved === "order-status" ? (
-              <s-banner tone="success">Order status update settings saved.</s-banner>
+              actionData.blocked ? (
+                <s-banner tone="critical">{actionData.message}</s-banner>
+              ) : (
+                <s-banner tone="success">Order status update settings saved.</s-banner>
+              )
             ) : null}
           </s-section>
 
@@ -422,7 +458,11 @@ export default function AutomationsPage() {
             </Form>
 
             {actionData?.saved === "cart-recovery" ? (
-              <s-banner tone="success">Cart recovery settings saved.</s-banner>
+              actionData.blocked ? (
+                <s-banner tone="critical">{actionData.message}</s-banner>
+              ) : (
+                <s-banner tone="success">Cart recovery settings saved.</s-banner>
+              )
             ) : null}
           </s-section>
 

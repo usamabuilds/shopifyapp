@@ -28,9 +28,10 @@ type LocalTemplate = {
 type FlowMapping = {
   flowLabel: string;
   flowKey: string;
+  useCase: TemplateUseCase;
   configuredTemplateKey: string;
   template: LocalTemplate | null;
-  status: "CONNECTED" | "MISSING_TEMPLATE_KEY" | "NOT_FOUND_IN_LIBRARY";
+  status: "CONNECTED" | "MISSING_TEMPLATE_KEY" | "NOT_FOUND_IN_LIBRARY" | "CATEGORY_MISMATCH";
 };
 
 type SampleContext = Record<string, string>;
@@ -49,6 +50,31 @@ const USE_CASE_LABELS: Record<TemplateUseCase, string> = {
   CART_RECOVERY: "Cart recovery",
   BROADCAST_CAMPAIGNS: "Broadcast campaigns",
 };
+
+const USE_CASE_CATEGORY_EXPECTATION: Record<TemplateUseCase, LocalTemplate["category"]> = {
+  ORDER_CONFIRMATION: "UTILITY",
+  ORDER_STATUS_UPDATES: "UTILITY",
+  CART_RECOVERY: "MARKETING",
+  BROADCAST_CAMPAIGNS: "MARKETING",
+};
+
+function resolveMappingStatus(row: {
+  configuredTemplateKey: string;
+  useCase: TemplateUseCase;
+  template: LocalTemplate | null;
+}): FlowMapping["status"] {
+  if (row.configuredTemplateKey.length === 0) {
+    return "MISSING_TEMPLATE_KEY";
+  }
+
+  if (!row.template) {
+    return "NOT_FOUND_IN_LIBRARY";
+  }
+
+  return USE_CASE_CATEGORY_EXPECTATION[row.useCase] !== row.template.category
+    ? "CATEGORY_MISMATCH"
+    : "CONNECTED";
+}
 
 function buildLocalTemplates(): LocalTemplate[] {
   const now = Date.now();
@@ -211,98 +237,98 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     {
       flowLabel: "Order confirmation",
       flowKey: "order_confirmation",
+      useCase: "ORDER_CONFIRMATION",
       configuredTemplateKey: confirmationSettings.templateKey,
       template: byKey.get(confirmationSettings.templateKey) ?? null,
-      status:
-        confirmationSettings.templateKey.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(confirmationSettings.templateKey)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: confirmationSettings.templateKey,
+        useCase: "ORDER_CONFIRMATION",
+        template: byKey.get(confirmationSettings.templateKey) ?? null,
+      }),
     },
     {
       flowLabel: "Order status: partially fulfilled",
       flowKey: "order_status_partial",
+      useCase: "ORDER_STATUS_UPDATES",
       configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_PARTIALLY_FULFILLED,
       template: byKey.get(orderStatusSettings.templateByStatus.ORDER_PARTIALLY_FULFILLED) ?? null,
-      status:
-        orderStatusSettings.templateByStatus.ORDER_PARTIALLY_FULFILLED.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(orderStatusSettings.templateByStatus.ORDER_PARTIALLY_FULFILLED)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_PARTIALLY_FULFILLED,
+        useCase: "ORDER_STATUS_UPDATES",
+        template: byKey.get(orderStatusSettings.templateByStatus.ORDER_PARTIALLY_FULFILLED) ?? null,
+      }),
     },
     {
       flowLabel: "Order status: fulfilled",
       flowKey: "order_status_fulfilled",
+      useCase: "ORDER_STATUS_UPDATES",
       configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_FULFILLED,
       template: byKey.get(orderStatusSettings.templateByStatus.ORDER_FULFILLED) ?? null,
-      status:
-        orderStatusSettings.templateByStatus.ORDER_FULFILLED.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(orderStatusSettings.templateByStatus.ORDER_FULFILLED)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_FULFILLED,
+        useCase: "ORDER_STATUS_UPDATES",
+        template: byKey.get(orderStatusSettings.templateByStatus.ORDER_FULFILLED) ?? null,
+      }),
     },
     {
       flowLabel: "Order status: out for delivery",
       flowKey: "order_status_out_for_delivery",
+      useCase: "ORDER_STATUS_UPDATES",
       configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_OUT_FOR_DELIVERY,
       template: byKey.get(orderStatusSettings.templateByStatus.ORDER_OUT_FOR_DELIVERY) ?? null,
-      status:
-        orderStatusSettings.templateByStatus.ORDER_OUT_FOR_DELIVERY.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(orderStatusSettings.templateByStatus.ORDER_OUT_FOR_DELIVERY)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_OUT_FOR_DELIVERY,
+        useCase: "ORDER_STATUS_UPDATES",
+        template: byKey.get(orderStatusSettings.templateByStatus.ORDER_OUT_FOR_DELIVERY) ?? null,
+      }),
     },
     {
       flowLabel: "Order status: delivered",
       flowKey: "order_status_delivered",
+      useCase: "ORDER_STATUS_UPDATES",
       configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_DELIVERED,
       template: byKey.get(orderStatusSettings.templateByStatus.ORDER_DELIVERED) ?? null,
-      status:
-        orderStatusSettings.templateByStatus.ORDER_DELIVERED.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(orderStatusSettings.templateByStatus.ORDER_DELIVERED)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_DELIVERED,
+        useCase: "ORDER_STATUS_UPDATES",
+        template: byKey.get(orderStatusSettings.templateByStatus.ORDER_DELIVERED) ?? null,
+      }),
     },
     {
       flowLabel: "Order status: cancelled",
       flowKey: "order_status_cancelled",
+      useCase: "ORDER_STATUS_UPDATES",
       configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_CANCELLED,
       template: byKey.get(orderStatusSettings.templateByStatus.ORDER_CANCELLED) ?? null,
-      status:
-        orderStatusSettings.templateByStatus.ORDER_CANCELLED.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(orderStatusSettings.templateByStatus.ORDER_CANCELLED)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: orderStatusSettings.templateByStatus.ORDER_CANCELLED,
+        useCase: "ORDER_STATUS_UPDATES",
+        template: byKey.get(orderStatusSettings.templateByStatus.ORDER_CANCELLED) ?? null,
+      }),
     },
     {
       flowLabel: "Cart recovery",
       flowKey: "cart_recovery",
+      useCase: "CART_RECOVERY",
       configuredTemplateKey: cartRecoverySettings.templateKey,
       template: byKey.get(cartRecoverySettings.templateKey) ?? null,
-      status:
-        cartRecoverySettings.templateKey.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(cartRecoverySettings.templateKey)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: cartRecoverySettings.templateKey,
+        useCase: "CART_RECOVERY",
+        template: byKey.get(cartRecoverySettings.templateKey) ?? null,
+      }),
     },
     {
       flowLabel: "Broadcast campaigns default",
       flowKey: "broadcast_campaign_default",
+      useCase: "BROADCAST_CAMPAIGNS",
       configuredTemplateKey: campaignSettings.defaultTemplateKey,
       template: byKey.get(campaignSettings.defaultTemplateKey) ?? null,
-      status:
-        campaignSettings.defaultTemplateKey.length === 0
-          ? "MISSING_TEMPLATE_KEY"
-          : byKey.has(campaignSettings.defaultTemplateKey)
-            ? "CONNECTED"
-            : "NOT_FOUND_IN_LIBRARY",
+      status: resolveMappingStatus({
+        configuredTemplateKey: campaignSettings.defaultTemplateKey,
+        useCase: "BROADCAST_CAMPAIGNS",
+        template: byKey.get(campaignSettings.defaultTemplateKey) ?? null,
+      }),
     },
   ];
 
@@ -344,6 +370,12 @@ export default function TemplatesPage() {
     statusWarnings.push(`Template state is ${selectedTemplate.status.toLowerCase()}. Messages can be blocked for mapped flows.`);
   }
 
+  if (selectedTemplate && USE_CASE_CATEGORY_EXPECTATION[selectedUseCase] !== selectedTemplate.category) {
+    statusWarnings.push(
+      `Category mismatch: ${USE_CASE_LABELS[selectedUseCase]} expects ${USE_CASE_CATEGORY_EXPECTATION[selectedUseCase]} templates but selected template is ${selectedTemplate.category}.`,
+    );
+  }
+
   const renderedHeader = selectedTemplate ? renderTemplate(selectedTemplate.content.header, context) : null;
   const renderedBody = selectedTemplate ? renderTemplate(selectedTemplate.content.body, context) : null;
   const renderedFooter = selectedTemplate?.content.footer
@@ -367,6 +399,10 @@ export default function TemplatesPage() {
         <s-paragraph>
           Merchant-facing local template management foundation. This view is intentionally local and does not sync real provider templates yet.
         </s-paragraph>
+        <s-banner tone="info">
+          Category assumptions used in Phase 1: order confirmation/status are utility, cart recovery/broadcast
+          are marketing. Map templates accordingly.
+        </s-banner>
 
         <table>
           <thead>
@@ -408,6 +444,7 @@ export default function TemplatesPage() {
           <thead>
             <tr>
               <th>Flow</th>
+              <th>Use case</th>
               <th>Configured template key</th>
               <th>Library match</th>
               <th>Mapping status</th>
@@ -417,6 +454,7 @@ export default function TemplatesPage() {
             {mappingRows.map((row) => (
               <tr key={row.flowKey}>
                 <td>{row.flowLabel}</td>
+                <td>{USE_CASE_LABELS[row.useCase]}</td>
                 <td>{row.configuredTemplateKey || "-"}</td>
                 <td>{row.template?.name ?? "-"}</td>
                 <td>{row.status}</td>
@@ -427,7 +465,7 @@ export default function TemplatesPage() {
 
         {mappingRows.some((item) => item.status !== "CONNECTED") ? (
           <s-banner tone="warning">
-            One or more flows have missing or unmatched template keys. Update keys in Automations/Campaigns to avoid skipped sends.
+            One or more flows have missing keys, unmatched templates, or category mismatches. Update keys and category mapping in Automations/Campaigns before sending.
           </s-banner>
         ) : (
           <s-banner tone="success">All current flow mappings resolve to templates in the local library.</s-banner>

@@ -311,6 +311,23 @@ export async function processOrderCreatedConfirmation(input: {
     };
   }
 
+  if (!settings.templateKey) {
+    const skipped = await db.orderConfirmation.update({
+      where: { id: confirmation?.id },
+      data: {
+        status: "SKIPPED_NOT_ELIGIBLE" satisfies OrderConfirmationStatus,
+        statusReason: "missing_order_confirmation_template",
+        processedAt: new Date(),
+      },
+    });
+
+    return {
+      processed: true,
+      reason: "missing_template",
+      confirmationId: skipped.id,
+    };
+  }
+
   const idempotencyKey = `order-confirmation:${input.shopDomain}:${order.orderId}`;
 
   const outboundMessage = await createOutboundMessage({
@@ -320,7 +337,7 @@ export async function processOrderCreatedConfirmation(input: {
     recipientAddress: order.recipientPhone!,
     providerName: "whatsapp_placeholder",
     payload: buildOrderConfirmationPayload(order),
-    templateKey: settings.templateKey || null,
+    templateKey: settings.templateKey,
     metadata: {
       orderId: order.orderId,
       webhookEventId: input.webhookEventId,
