@@ -1,5 +1,6 @@
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
+import { logOperationalEvent } from "./observability.server";
 import {
   PlaceholderWhatsAppProviderAdapter,
   createOutboundMessage,
@@ -260,9 +261,14 @@ export async function processOrderCreatedConfirmation(input: {
   });
 
   if (!order.orderId) {
-    console.warn(
-      `[order-confirmation] skipped: missing order id. shop=${input.shopDomain} webhookEventId=${input.webhookEventId}`,
-    );
+    logOperationalEvent({
+      domain: "order_confirmation",
+      event: "skipped_missing_order_id",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      reason: "missing_order_id",
+    });
 
     return {
       processed: false,
@@ -272,9 +278,16 @@ export async function processOrderCreatedConfirmation(input: {
   }
 
   if (confirmation && confirmation.status !== "PENDING") {
-    console.info(
-      `[order-confirmation] duplicate suppressed. shop=${input.shopDomain} orderId=${order.orderId} confirmationId=${confirmation.id}`,
-    );
+    logOperationalEvent({
+      domain: "order_confirmation",
+      event: "duplicate_suppressed",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: confirmation.id,
+      metadata: {
+        orderId: order.orderId,
+      },
+    });
 
     return {
       processed: true,
@@ -300,9 +313,18 @@ export async function processOrderCreatedConfirmation(input: {
       },
     });
 
-    console.info(
-      `[order-confirmation] skipped. shop=${input.shopDomain} orderId=${order.orderId} reason=${eligibility.reason}`,
-    );
+    logOperationalEvent({
+      domain: "order_confirmation",
+      event: "skipped_not_eligible",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      entityId: skipped.id,
+      reason: eligibility.reason,
+      metadata: {
+        orderId: order.orderId,
+      },
+    });
 
     return {
       processed: true,
@@ -371,9 +393,20 @@ export async function processOrderCreatedConfirmation(input: {
     },
   });
 
-  console.info(
-    `[order-confirmation] processed. shop=${input.shopDomain} orderId=${order.orderId} status=${finalized.status}`,
-  );
+  logOperationalEvent({
+    domain: "order_confirmation",
+    event: "processed",
+    level: finalized.status === "FAILED" ? "error" : "info",
+    shopDomain: input.shopDomain,
+    webhookEventId: input.webhookEventId,
+    entityId: finalized.id,
+    reason: finalized.statusReason,
+    metadata: {
+      orderId: order.orderId,
+      status: finalized.status,
+      outboundMessageId: outboundMessage.id,
+    },
+  });
 
   return {
     processed: true,

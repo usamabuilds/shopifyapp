@@ -1,5 +1,6 @@
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
+import { logOperationalEvent } from "./observability.server";
 import {
   PlaceholderWhatsAppProviderAdapter,
   createOutboundMessage,
@@ -300,6 +301,14 @@ export async function processCheckoutUpdatedForRecovery(input: {
   const event = normalizeCheckoutEvent(input.payload);
 
   if (!event.checkoutId) {
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "skipped_missing_checkout_id",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      reason: "missing_checkout_id",
+    });
     return { processed: false, reason: "missing_checkout_id", recoveryId: null };
   }
 
@@ -341,6 +350,17 @@ export async function processCheckoutUpdatedForRecovery(input: {
     }
 
     if (isStateTerminal(existing.state)) {
+      logOperationalEvent({
+        domain: "cart_recovery",
+        event: "duplicate_suppressed",
+        shopDomain: input.shopDomain,
+        webhookEventId: input.webhookEventId,
+        entityId: existing.id,
+        metadata: {
+          checkoutId: event.checkoutId,
+          existingState: existing.state,
+        },
+      });
       return {
         processed: true,
         reason: "duplicate_suppressed",
@@ -546,6 +566,17 @@ export async function dispatchDueCartRecoveries(input: { shopDomain: string; lim
     dispatched += 1;
   }
 
+  logOperationalEvent({
+    domain: "cart_recovery",
+    event: "dispatch_due_completed",
+    shopDomain: input.shopDomain,
+    metadata: {
+      scanned: dueRecoveries.length,
+      dispatched,
+      limit: input.limit ?? 20,
+    },
+  });
+
   return { dispatched, scanned: dueRecoveries.length };
 }
 
@@ -584,6 +615,16 @@ export async function attributeRecoveredOrder(input: {
   });
 
   if (!candidate) {
+    logOperationalEvent({
+      domain: "cart_recovery",
+      event: "recovery_attribution_skipped",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      reason: "no_matching_recovery",
+      metadata: {
+        orderId: order.orderId,
+      },
+    });
     return { attributed: false, reason: "no_matching_recovery", recoveryId: null };
   }
 
@@ -608,6 +649,18 @@ export async function attributeRecoveredOrder(input: {
       processedAt: new Date(),
       lastEvaluatedAt: new Date(),
       webhookEventId: input.webhookEventId,
+    },
+  });
+
+  logOperationalEvent({
+    domain: "cart_recovery",
+    event: "recovered_order_attributed",
+    shopDomain: input.shopDomain,
+    webhookEventId: input.webhookEventId,
+    entityId: candidate.id,
+    metadata: {
+      orderId: order.orderId,
+      recoveredOrderNumber: order.orderNumber,
     },
   });
 

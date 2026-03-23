@@ -1,5 +1,6 @@
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
+import { logOperationalEvent } from "./observability.server";
 
 export type WorkflowStatus = "DRAFT" | "PUBLISHED" | "PAUSED" | "ARCHIVED";
 export type WorkflowRunStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
@@ -408,6 +409,18 @@ export async function transitionWorkflowStatus(args: {
       },
     });
 
+    logOperationalEvent({
+      domain: "workflow",
+      event: "publish_blocked_validation",
+      level: "warn",
+      shopDomain: args.shopDomain,
+      entityId: workflow.id,
+      reason: "workflow_validation_failed",
+      metadata: {
+        issueCount: validationIssues.length,
+      },
+    });
+
     return {
       ok: false as const,
       error: "Workflow has validation issues and cannot be published.",
@@ -426,6 +439,17 @@ export async function transitionWorkflowStatus(args: {
       publishedAt: args.nextStatus === "PUBLISHED" ? now : workflow.publishedAt,
       pausedAt: args.nextStatus === "PAUSED" ? now : workflow.pausedAt,
       archivedAt: args.nextStatus === "ARCHIVED" ? now : workflow.archivedAt,
+    },
+  });
+
+  logOperationalEvent({
+    domain: "workflow",
+    event: "status_transitioned",
+    shopDomain: args.shopDomain,
+    entityId: workflow.id,
+    metadata: {
+      nextStatus: args.nextStatus,
+      validationIssueCount: validationIssues.length,
     },
   });
 
@@ -465,6 +489,19 @@ export async function createWorkflowRunPreview(args: {
       startedAt: new Date(),
       completedAt: failed ? null : new Date(),
       failedAt: failed ? new Date() : null,
+    },
+  });
+
+  logOperationalEvent({
+    domain: "workflow",
+    event: failed ? "run_preview_failed" : "run_preview_succeeded",
+    level: failed ? "warn" : "info",
+    shopDomain: args.shopDomain,
+    entityId: workflow.id,
+    reason: failed ? issues.map((issue) => issue.message).join("; ") : null,
+    metadata: {
+      workflowRunTriggerType: args.triggerType,
+      issueCount: issues.length,
     },
   });
 

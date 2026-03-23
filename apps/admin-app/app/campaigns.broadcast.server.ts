@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
+import { logOperationalEvent } from "./observability.server";
 import {
   PlaceholderWhatsAppProviderAdapter,
   createOutboundMessage,
@@ -616,6 +617,12 @@ export async function dispatchDueBroadcastCampaigns(args: {
   const settings = await getBroadcastCampaignSettings(args.shopDomain);
 
   if (!settings.enabled) {
+    logOperationalEvent({
+      domain: "campaign",
+      event: "dispatch_skipped_disabled",
+      level: "warn",
+      shopDomain: args.shopDomain,
+    });
     return;
   }
 
@@ -631,6 +638,17 @@ export async function dispatchDueBroadcastCampaigns(args: {
     },
     orderBy: [{ scheduleAt: "asc" }, { createdAt: "asc" }],
     take: args.limitCampaigns ?? 5,
+  });
+
+  logOperationalEvent({
+    domain: "campaign",
+    event: "dispatch_batch_loaded",
+    shopDomain: args.shopDomain,
+    metadata: {
+      campaignCount: campaigns.length,
+      limitCampaigns: args.limitCampaigns ?? 5,
+      batchSize: settings.dispatchBatchSize,
+    },
   });
 
   for (const campaign of campaigns) {
@@ -677,6 +695,17 @@ export async function dispatchDueBroadcastCampaigns(args: {
           message: `Unhandled dispatch error for ${recipient.recipientAddress}.`,
           metadata: {
             error: error instanceof Error ? error.message : String(error),
+          },
+        });
+        logOperationalEvent({
+          domain: "campaign",
+          event: "recipient_dispatch_exception",
+          level: "error",
+          shopDomain: campaign.shopDomain,
+          entityId: campaign.id,
+          reason: error instanceof Error ? error.message : String(error),
+          metadata: {
+            recipientAddress: recipient.recipientAddress,
           },
         });
       }

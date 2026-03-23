@@ -1,5 +1,6 @@
 import prisma from "./db.server";
 import { ensureShopFoundation } from "./models.shop.server";
+import { logOperationalEvent } from "./observability.server";
 import {
   PlaceholderWhatsAppProviderAdapter,
   createOutboundMessage,
@@ -300,17 +301,28 @@ export async function processOrderStatusUpdate(input: {
   const event = normalizeStatusEvent(input.topic, input.payload);
 
   if (!event.orderId) {
-    console.warn(
-      `[order-status-update] skipped: missing order id. shop=${input.shopDomain} topic=${input.topic} webhookEventId=${input.webhookEventId}`,
-    );
+    logOperationalEvent({
+      domain: "order_status_update",
+      event: "skipped_missing_order_id",
+      level: "warn",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      reason: "missing_order_id",
+      metadata: { topic: input.topic },
+    });
 
     return { processed: false, reason: "missing_order_id", orderStatusUpdateId: null };
   }
 
   if (!event.statusType) {
-    console.info(
-      `[order-status-update] skipped: status not mapped. shop=${input.shopDomain} orderId=${event.orderId} topic=${input.topic}`,
-    );
+    logOperationalEvent({
+      domain: "order_status_update",
+      event: "skipped_unmapped_status",
+      shopDomain: input.shopDomain,
+      webhookEventId: input.webhookEventId,
+      reason: "status_not_mapped",
+      metadata: { orderId: event.orderId, topic: input.topic },
+    });
 
     return { processed: false, reason: "status_not_mapped", orderStatusUpdateId: null };
   }
@@ -352,9 +364,17 @@ export async function processOrderStatusUpdate(input: {
     }
 
     if (existing.state !== "PENDING") {
-      console.info(
-        `[order-status-update] duplicate suppressed. shop=${input.shopDomain} orderId=${event.orderId} statusType=${event.statusType}`,
-      );
+      logOperationalEvent({
+        domain: "order_status_update",
+        event: "duplicate_suppressed",
+        shopDomain: input.shopDomain,
+        webhookEventId: input.webhookEventId,
+        entityId: existing.id,
+        metadata: {
+          orderId: event.orderId,
+          statusType: event.statusType,
+        },
+      });
 
       return { processed: true, reason: "duplicate_suppressed", orderStatusUpdateId: existing.id };
     }
@@ -452,9 +472,21 @@ export async function processOrderStatusUpdate(input: {
     },
   });
 
-  console.info(
-    `[order-status-update] processed. shop=${input.shopDomain} orderId=${event.orderId} statusType=${event.statusType} state=${finalized.state}`,
-  );
+  logOperationalEvent({
+    domain: "order_status_update",
+    event: "processed",
+    level: finalized.state === "FAILED" ? "error" : "info",
+    shopDomain: input.shopDomain,
+    webhookEventId: input.webhookEventId,
+    entityId: finalized.id,
+    reason: finalized.stateReason,
+    metadata: {
+      orderId: event.orderId,
+      statusType: event.statusType,
+      state: finalized.state,
+      outboundMessageId: outboundMessage.id,
+    },
+  });
 
   return {
     processed: true,
