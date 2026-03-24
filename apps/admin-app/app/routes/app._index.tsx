@@ -111,10 +111,16 @@ export default function OverviewPage() {
           <s-paragraph>
             Current setup step: <strong>{overview.onboarding.currentStep}</strong>
           </s-paragraph>
+          {!overview.onboarding.readiness.whatsappConnected ? (
+            <s-banner tone="warning">
+              WhatsApp connection is required before production usage. Complete it in <Link to="/app/whatsapp">WhatsApp connection</Link>.
+            </s-banner>
+          ) : null}
           <s-paragraph>
             Shop: <strong>{overview.shopDomain}</strong> · Installed: {new Date(overview.installedAt).toLocaleDateString()}
           </s-paragraph>
           <s-stack direction="inline" gap="small">
+            <Link to="/app/whatsapp">Connect WhatsApp</Link>
             <Link to="/app/settings">Continue onboarding</Link>
             <Link to="/app/automations">Review automations</Link>
           </s-stack>
@@ -179,6 +185,9 @@ export default function OverviewPage() {
 
       <s-section heading="Quick actions">
         <s-stack direction="block" gap="small">
+          <s-paragraph>
+            <Link to="/app/whatsapp">Connect/configure WhatsApp foundation</Link>
+          </s-paragraph>
           <s-paragraph>
             <Link to="/app/settings">Update onboarding and shop settings</Link>
           </s-paragraph>
