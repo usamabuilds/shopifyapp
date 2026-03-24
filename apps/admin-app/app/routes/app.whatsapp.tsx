@@ -1,10 +1,14 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 
+import prisma from "../db.server";
+import { createOutboundMessage, dispatchOutboundMessage } from "../messaging/outbound-messaging.server";
+import { WhatsAppCloudProviderAdapter } from "../messaging/whatsapp-cloud-provider.server";
 import { getShopOverviewState } from "../models.shop.server";
 import { authenticate } from "../shopify.server";
 import {
   getMerchantWhatsappConnectionState,
+  getMerchantWhatsappProviderCredentials,
   getMetaConnectionAvailability,
   parseMerchantWhatsappConnectionFormData,
   startMetaWhatsappAuth,
@@ -87,12 +91,39 @@ function authTone(status: MerchantWhatsappAuthStatus): "success" | "info" | "war
   return "critical";
 }
 
+type OutboundMessageListItem = {
+  id: string;
+  recipientAddress: string;
+  status: string;
+  statusReason: string | null;
+  providerMessageId: string | null;
+  createdAt: Date;
+  sentAt: Date | null;
+};
+
+type PrismaDb = {
+  outboundMessage: {
+    findMany: (args: Record<string, unknown>) => Promise<OutboundMessageListItem[]>;
+  };
+};
+
+const db = prisma as unknown as PrismaDb;
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const requestUrl = new URL(request.url);
   const { session } = await authenticate.admin(request);
-  const [connection, overview] = await Promise.all([
+  const [connection, overview, recentTestSends] = await Promise.all([
     getMerchantWhatsappConnectionState(session.shop),
     getShopOverviewState(session.shop),
+    db.outboundMessage.findMany({
+      where: {
+        shopDomain: session.shop,
+        useCase: "custom",
+        templateKey: "whatsapp_test_send",
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
   ]);
 
   const metaConnection = getMetaConnectionAvailability();
@@ -107,6 +138,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       source: requestUrl.searchParams.get("authSource"),
       timestamp: requestUrl.searchParams.get("authTimestamp"),
     },
+    recentTestSends,
   };
 };
 
@@ -148,6 +180,72 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     };
   }
 
+  if (intent === "test_send") {
+    const recipientAddress = String(formData.get("testRecipientAddress") ?? "").trim();
+    const messageText = String(formData.get("testMessageText") ?? "").trim();
+
+    if (!recipientAddress || !messageText) {
+      return {
+        saved: false as const,
+        synced: false as const,
+        syncMessage: "Recipient and message text are both required for test send.",
+        connectionStatus: "NOT_CONNECTED" as const,
+        syncStatus: "NOT_STARTED" as const,
+        savedAt: new Date().toISOString(),
+      };
+    }
+
+    const credentials = await getMerchantWhatsappProviderCredentials(session.shop);
+
+    if (!credentials.ok) {
+      return {
+        saved: false as const,
+        synced: false as const,
+        syncMessage: credentials.reason,
+        connectionStatus: "NOT_CONNECTED" as const,
+        syncStatus: "NOT_STARTED" as const,
+        savedAt: new Date().toISOString(),
+      };
+    }
+
+    const outboundMessage = await createOutboundMessage({
+      shopDomain: session.shop,
+      channel: "WHATSAPP",
+      useCase: "custom",
+      recipientAddress,
+      payload: {
+        text: messageText,
+      },
+      providerName: "meta_whatsapp_cloud",
+      templateKey: "whatsapp_test_send",
+      metadata: {
+        source: "app_whatsapp_test_send",
+      },
+    });
+
+    const dispatchResult = await dispatchOutboundMessage({
+      messageId: outboundMessage.id,
+      provider: new WhatsAppCloudProviderAdapter({
+        phoneNumberId: credentials.phoneNumberId,
+        accessToken: credentials.accessToken,
+        tokenType: credentials.tokenType,
+      }),
+    });
+
+    const dispatched = dispatchResult.status === "SENT" || dispatchResult.status === "DELIVERED";
+
+    return {
+      saved: false as const,
+      synced: dispatched,
+      syncMessage: dispatched
+        ? `Live test send dispatched. Provider message id: ${dispatchResult.providerMessageId ?? "not returned"}.`
+        : `Live test send failed: ${dispatchResult.statusReason ?? "provider error"}.`,
+      connectionStatus: "CONNECTED" as const,
+      syncStatus: "IN_SYNC" as const,
+      savedAt: new Date().toISOString(),
+    };
+  }
+
   const parsed = parseMerchantWhatsappConnectionFormData(formData);
   const updated = await upsertMerchantWhatsappConnection(session.shop, parsed);
 
@@ -160,7 +258,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function WhatsappConnectionPage() {
-  const { connection, overview, metaConnection, callbackNotice } = useLoaderData<typeof loader>();
+  const { connection, overview, metaConnection, callbackNotice, recentTestSends } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const saving = navigation.state === "submitting";
@@ -358,6 +456,61 @@ export default function WhatsappConnectionPage() {
             If sync remains pending/failed, keep this page updated and use <Link to="/app/support-tools">Support tools</Link>{" "}
             to inspect downstream failures.
           </s-banner>
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Live provider test send">
+        <s-stack direction="block" gap="small">
+          <s-paragraph>
+            Trigger one controlled merchant test send using the currently saved Meta access token and WhatsApp phone
+            number id.
+          </s-paragraph>
+          <Form method="post">
+            <s-stack direction="block" gap="small">
+              <input type="hidden" name="intent" value="test_send" />
+              <label>
+                Test recipient (E.164 format)
+                <input name="testRecipientAddress" type="text" placeholder="15551234567" />
+              </label>
+              <label>
+                Test message text
+                <textarea
+                  name="testMessageText"
+                  rows={3}
+                  defaultValue="Test send from Shopify admin app."
+                />
+              </label>
+              <button type="submit" disabled={saving}>
+                {saving ? "Sending…" : "Send live test message"}
+              </button>
+            </s-stack>
+          </Form>
+          {recentTestSends.length === 0 ? (
+            <s-banner tone="info">No test sends recorded yet for this shop.</s-banner>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Created</th>
+                  <th>Recipient</th>
+                  <th>Status</th>
+                  <th>Provider message ID</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTestSends.map((item) => (
+                  <tr key={item.id}>
+                    <td>{new Date(item.createdAt).toLocaleString()}</td>
+                    <td>{item.recipientAddress}</td>
+                    <td>{item.status}</td>
+                    <td>{item.providerMessageId ?? "-"}</td>
+                    <td>{item.statusReason ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </s-stack>
       </s-section>
     </s-page>
