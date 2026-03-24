@@ -104,6 +104,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     callbackNotice: {
       result: requestUrl.searchParams.get("authResult"),
       message: requestUrl.searchParams.get("authMessage"),
+      source: requestUrl.searchParams.get("authSource"),
+      timestamp: requestUrl.searchParams.get("authTimestamp"),
     },
   };
 };
@@ -186,11 +188,21 @@ export default function WhatsappConnectionPage() {
             <s-banner tone="critical">Latest auth failure: {connection.authFailureReason}</s-banner>
           ) : null}
           {metaConnection.enabled ? (
-            <Form method="post">
-              <button type="submit" name="intent" value="connect_meta" disabled={saving}>
-                {saving ? "Redirecting…" : "Connect Meta / WhatsApp"}
-              </button>
-            </Form>
+            <s-stack direction="block" gap="small">
+              <Form method="post">
+                <button type="submit" name="intent" value="connect_meta" disabled={saving}>
+                  {saving ? "Redirecting…" : "Connect Meta / WhatsApp"}
+                </button>
+              </Form>
+              <s-paragraph>
+                Meta callback URL: <code>{metaConnection.redirectUri}</code>
+              </s-paragraph>
+              {metaConnection.warnings.map((warning) => (
+                <s-banner key={warning} tone="warning">
+                  {warning}
+                </s-banner>
+              ))}
+            </s-stack>
           ) : (
             <s-banner tone="critical">{metaConnection.reason}</s-banner>
           )}
@@ -199,9 +211,23 @@ export default function WhatsappConnectionPage() {
             a real Meta authorization foundation.
           </s-paragraph>
           {callbackNotice.message ? (
-            <s-banner tone={callbackNotice.result === "success" ? "success" : "critical"}>
-              {callbackNotice.message}
-            </s-banner>
+            <s-stack direction="block" gap="small">
+              <s-banner tone={callbackNotice.result === "success" ? "success" : "critical"}>
+                {callbackNotice.message}
+              </s-banner>
+              {callbackNotice.timestamp ? (
+                <s-paragraph>
+                  Callback processed: {new Date(callbackNotice.timestamp).toLocaleString()} (source:{" "}
+                  {callbackNotice.source === "shopify_session" ? "Shopify session" : "OAuth state"})
+                </s-paragraph>
+              ) : null}
+              {callbackNotice.result !== "success" ? (
+                <s-banner tone="info">
+                  Recovery: reopen this page in Shopify Admin, click <strong>Connect Meta / WhatsApp</strong>, and
+                  complete authorization again.
+                </s-banner>
+              ) : null}
+            </s-stack>
           ) : null}
         </s-stack>
       </s-section>
