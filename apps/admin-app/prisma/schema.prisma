@@ -43,6 +43,7 @@ model Shop {
   settings      ShopSettings?
   onboarding    OnboardingState?
   whatsappConnection ShopWhatsappConnection?
+  whatsappTemplates ShopWhatsappTemplate[]
   webhookEvents      WebhookEvent[]
   outboundMessages   OutboundMessage[]
   outboundCallbacks  OutboundMessageCallback[]
@@ -116,6 +117,27 @@ model ShopWhatsappConnection {
   createdAt           DateTime                          @default(now())
   updatedAt           DateTime                          @updatedAt
   shop                Shop                              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model ShopWhatsappTemplate {
+  id                 String   @id @default(cuid())
+  shopId             String
+  templateKey        String
+  providerTemplateId String?
+  name               String
+  category           String
+  language           String
+  status             String
+  header             String
+  body               String
+  footer             String?
+  syncedAt           DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  shop               Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, templateKey])
+  @@index([shopId, status])
 }
 
 enum WhatsAppConnectionStatus {
