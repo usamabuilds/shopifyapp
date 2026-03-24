@@ -1,12 +1,15 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 
 import { getShopOverviewState } from "../models.shop.server";
 import { authenticate } from "../shopify.server";
 import {
   getMerchantWhatsappConnectionState,
+  getMetaConnectionAvailability,
   parseMerchantWhatsappConnectionFormData,
+  startMetaWhatsappAuth,
   upsertMerchantWhatsappConnection,
+  type MerchantWhatsappAuthStatus,
   type MerchantWhatsappConnectionStatus,
   type MerchantWhatsappSyncStatus,
 } from "../whatsapp-connection.server";
@@ -26,6 +29,14 @@ const SYNC_STATUS_LABELS: Record<MerchantWhatsappSyncStatus, string> = {
   IN_SYNC: "In sync",
   NEEDS_ATTENTION: "Needs attention",
   FAILED: "Failed",
+};
+
+const AUTH_STATUS_LABELS: Record<MerchantWhatsappAuthStatus, string> = {
+  NOT_STARTED: "Not started",
+  IN_PROGRESS: "In progress",
+  INCOMPLETE: "Connected, asset selection incomplete",
+  FAILED: "Failed",
+  CONNECTED: "Connected",
 };
 
 function connectionTone(status: MerchantWhatsappConnectionStatus): "success" | "info" | "warning" | "critical" {
@@ -60,16 +71,40 @@ function syncTone(status: MerchantWhatsappSyncStatus): "success" | "info" | "war
   return "critical";
 }
 
+function authTone(status: MerchantWhatsappAuthStatus): "success" | "info" | "warning" | "critical" {
+  if (status === "CONNECTED") {
+    return "success";
+  }
+
+  if (status === "NOT_STARTED") {
+    return "info";
+  }
+
+  if (status === "IN_PROGRESS" || status === "INCOMPLETE") {
+    return "warning";
+  }
+
+  return "critical";
+}
+
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const requestUrl = new URL(request.url);
   const { session } = await authenticate.admin(request);
   const [connection, overview] = await Promise.all([
     getMerchantWhatsappConnectionState(session.shop),
     getShopOverviewState(session.shop),
   ]);
 
+  const metaConnection = getMetaConnectionAvailability();
+
   return {
     connection,
     overview,
+    metaConnection,
+    callbackNotice: {
+      result: requestUrl.searchParams.get("authResult"),
+      message: requestUrl.searchParams.get("authMessage"),
+    },
   };
 };
 
@@ -77,6 +112,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
+
+  if (intent === "connect_meta") {
+    const result = await startMetaWhatsappAuth(session.shop);
+
+    if (!result.ok) {
+      return {
+        saved: false as const,
+        synced: false as const,
+        syncMessage: result.reason,
+        connectionStatus: "NOT_CONNECTED" as const,
+        syncStatus: "NOT_STARTED" as const,
+        savedAt: new Date().toISOString(),
+      };
+    }
+
+    throw redirect(result.authUrl);
+  }
 
   if (intent === "sync_templates") {
     const syncResult = await requestWhatsappTemplateSync(session.shop);
@@ -106,7 +158,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function WhatsappConnectionPage() {
-  const { connection, overview } = useLoaderData<typeof loader>();
+  const { connection, overview, metaConnection, callbackNotice } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const saving = navigation.state === "submitting";
@@ -122,6 +174,38 @@ export default function WhatsappConnectionPage() {
 
   return (
     <s-page heading="WhatsApp connection">
+      <s-section heading="Provider connection">
+        <s-stack direction="block" gap="small">
+          <s-banner tone={authTone(connection.authStatus)}>
+            Meta auth state: <strong>{AUTH_STATUS_LABELS[connection.authStatus]}</strong>
+          </s-banner>
+          {connection.providerConnectedAt ? (
+            <s-paragraph>Connected at: {new Date(connection.providerConnectedAt).toLocaleString()}</s-paragraph>
+          ) : null}
+          {connection.authFailureReason ? (
+            <s-banner tone="critical">Latest auth failure: {connection.authFailureReason}</s-banner>
+          ) : null}
+          {metaConnection.enabled ? (
+            <Form method="post">
+              <button type="submit" name="intent" value="connect_meta" disabled={saving}>
+                {saving ? "Redirecting…" : "Connect Meta / WhatsApp"}
+              </button>
+            </Form>
+          ) : (
+            <s-banner tone="critical">{metaConnection.reason}</s-banner>
+          )}
+          <s-paragraph>
+            This provider-auth flow keeps existing Shopify auth/session behavior while replacing manual-only setup with
+            a real Meta authorization foundation.
+          </s-paragraph>
+          {callbackNotice.message ? (
+            <s-banner tone={callbackNotice.result === "success" ? "success" : "critical"}>
+              {callbackNotice.message}
+            </s-banner>
+          ) : null}
+        </s-stack>
+      </s-section>
+
       <s-section heading="Connection readiness">
         <s-stack direction="block" gap="small">
           <s-banner tone={connectionTone(connection.connectionStatus)}>
@@ -166,10 +250,10 @@ export default function WhatsappConnectionPage() {
         )}
 
         <Form method="post">
-        <s-stack direction="block" gap="base">
-          <button type="submit" name="intent" value="sync_templates" disabled={saving}>
-            {saving ? "Syncing…" : "Sync templates now"}
-          </button>
+          <s-stack direction="block" gap="base">
+            <button type="submit" name="intent" value="sync_templates" disabled={saving}>
+              {saving ? "Syncing…" : "Sync templates now"}
+            </button>
             <label>
               Business account ID
               <input name="businessAccountId" type="text" defaultValue={connection.businessAccountId} placeholder="1234567890" />

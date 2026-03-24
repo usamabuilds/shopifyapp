@@ -9,7 +9,8 @@ type OperationalLogInput = {
     | "cart_recovery"
     | "campaign"
     | "workflow"
-    | "support_tools";
+    | "support_tools"
+    | "whatsapp_connection";
   event: string;
   level?: LogLevel;
   shopDomain?: string;
