@@ -57,6 +57,18 @@ export type MerchantWhatsappConnectionState = {
   };
 };
 
+export type MerchantWhatsappProviderCredentials =
+  | {
+      ok: true;
+      phoneNumberId: string;
+      accessToken: string;
+      tokenType: string;
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
 type ConnectionRecord = {
   id: string;
   businessAccountId: string | null;
@@ -72,6 +84,7 @@ type ConnectionRecord = {
   authRequestedAt: Date | null;
   authFailureReason: string | null;
   providerAccessToken: string | null;
+  providerTokenType: string | null;
   providerConnectedAt: Date | null;
   updatedAt: Date;
 };
@@ -364,6 +377,48 @@ export async function getMerchantWhatsappConnectionState(
       templatesReady: shop.onboarding?.readinessTemplatesReady ?? false,
       onboardingCurrentStep: shop.onboarding?.currentStep ?? "identity_confirmed",
     },
+  };
+}
+
+export async function getMerchantWhatsappProviderCredentials(
+  shopDomain: string,
+): Promise<MerchantWhatsappProviderCredentials> {
+  const shop = await ensureShopFoundation(shopDomain);
+  const connection = shop.whatsappConnection as ConnectionRecord | null;
+
+  if (!connection) {
+    return {
+      ok: false,
+      reason: "No WhatsApp provider connection is saved for this shop yet.",
+    };
+  }
+
+  if (!connection.providerAccessToken) {
+    return {
+      ok: false,
+      reason: "Meta access token is missing. Reconnect Meta / WhatsApp before sending.",
+    };
+  }
+
+  if (!connection.phoneNumberId) {
+    return {
+      ok: false,
+      reason: "WhatsApp phone number ID is missing. Complete asset setup before sending.",
+    };
+  }
+
+  if (connection.errorState) {
+    return {
+      ok: false,
+      reason: `Connection is marked misconfigured: ${connection.errorState}`,
+    };
+  }
+
+  return {
+    ok: true,
+    phoneNumberId: connection.phoneNumberId,
+    accessToken: connection.providerAccessToken,
+    tokenType: connection.providerTokenType ?? "Bearer",
   };
 }
 
