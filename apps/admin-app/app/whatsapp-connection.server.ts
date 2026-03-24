@@ -246,16 +246,71 @@ function getMetaConfig() {
   };
 }
 
+type ParsedMetaOauthState = {
+  shopDomain: string;
+  nonce: string;
+};
+
+export function parseMetaOauthState(state: string | null): ParsedMetaOauthState | null {
+  if (!state) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as {
+      shopDomain?: string;
+      nonce?: string;
+    };
+
+    if (!payload.shopDomain || !payload.nonce) {
+      return null;
+    }
+
+    return {
+      shopDomain: payload.shopDomain,
+      nonce: payload.nonce,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function getMetaConnectionAvailability() {
   const config = getMetaConfig();
+  const warnings: string[] = [];
 
   if (config.enabled) {
-    return { enabled: true as const, reason: null };
+    try {
+      const callbackBaseUrl = new URL(config.redirectUri);
+      const hostname = callbackBaseUrl.hostname.toLowerCase();
+      const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+
+      if (callbackBaseUrl.protocol !== "https:") {
+        warnings.push("SHOPIFY_APP_URL should use https so Meta can call back to your app.");
+      }
+
+      if (isLocalhost) {
+        warnings.push("SHOPIFY_APP_URL points to localhost. Use an https tunnel URL for Meta callback verification.");
+      }
+    } catch {
+      warnings.push("SHOPIFY_APP_URL is not a valid absolute URL. Update it before testing Meta callback.");
+    }
+  }
+
+  if (config.enabled) {
+    return {
+      enabled: true as const,
+      reason: null,
+      redirectUri: config.redirectUri,
+      warnings,
+    };
   }
 
   return {
     enabled: false as const,
     reason: "Meta OAuth is unavailable. Configure META_APP_ID, META_APP_SECRET, and SHOPIFY_APP_URL.",
+    redirectUri: config.redirectUri,
+    warnings,
   };
 }
 
@@ -399,11 +454,9 @@ export async function completeMetaWhatsappAuth(input: CompleteMetaAuthInput): Pr
     return { ok: false, message: "Missing OAuth state in callback. Try reconnecting." };
   }
 
-  let parsedState: { shopDomain?: string; nonce?: string } = {};
+  const parsedState = parseMetaOauthState(input.state);
 
-  try {
-    parsedState = JSON.parse(Buffer.from(input.state, "base64url").toString("utf8"));
-  } catch {
+  if (!parsedState) {
     await db.shopWhatsappConnection.update({
       where: { id: connection.id },
       data: {

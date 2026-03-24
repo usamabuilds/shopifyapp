@@ -1,16 +1,34 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { redirect } from "react-router";
 
-import { completeMetaWhatsappAuth } from "../whatsapp-connection.server";
+import { completeMetaWhatsappAuth, parseMetaOauthState } from "../whatsapp-connection.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
   const requestUrl = new URL(request.url);
+  const stateParam = requestUrl.searchParams.get("state");
+  const parsedState = parseMetaOauthState(stateParam);
+  let shopDomain = parsedState?.shopDomain ?? null;
+  let callbackSessionSource = "state";
+
+  try {
+    const { session } = await authenticate.admin(request);
+    shopDomain = session.shop;
+    callbackSessionSource = "shopify_session";
+  } catch {
+    // OAuth callback can return outside active embedded session. We still verify state nonce server-side.
+  }
+
+  if (!shopDomain) {
+    const params = new URLSearchParams();
+    params.set("authResult", "failed");
+    params.set("authMessage", "Unable to resolve shop context from callback. Restart Meta connection from WhatsApp setup.");
+    throw redirect(`/app/whatsapp?${params.toString()}`);
+  }
 
   const result = await completeMetaWhatsappAuth({
-    shopDomain: session.shop,
-    state: requestUrl.searchParams.get("state"),
+    shopDomain,
+    state: stateParam,
     code: requestUrl.searchParams.get("code"),
     error: requestUrl.searchParams.get("error"),
     errorDescription: requestUrl.searchParams.get("error_description"),
@@ -22,6 +40,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const params = new URLSearchParams();
   params.set("authResult", result.ok ? "success" : "failed");
   params.set("authMessage", result.message);
+  params.set("authSource", callbackSessionSource);
+  params.set("authTimestamp", new Date().toISOString());
 
   throw redirect(`/app/whatsapp?${params.toString()}`);
 };

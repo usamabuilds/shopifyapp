@@ -118,6 +118,32 @@ This runbook is for operator/support responders working in `app/support-tools`.
 2. Fix invalid blocks/fields.
 3. Run preview again; verify run transitions to `SUCCEEDED`.
 
+## 8) WhatsApp Meta OAuth callback verification (local/dev)
+
+**Goal**
+- Verify `/app/whatsapp/callback` can be completed end to end and that operator-visible evidence is present in `/app/whatsapp`.
+
+**Readiness checks**
+1. Open **/app/whatsapp** and confirm Meta OAuth is enabled.
+2. Confirm the displayed **Meta callback URL** matches the URL configured in the Meta app.
+3. If warnings show `localhost` or non-https URL, switch to a public https app URL (for example, tunnel URL) before testing.
+
+**Verification flow**
+1. Click **Connect Meta / WhatsApp**.
+2. Complete/deny the Meta dialog to force success/failure callback scenarios.
+3. Back on **/app/whatsapp**, confirm callback evidence appears:
+   - success/failure banner
+   - callback processed timestamp
+   - callback source (`Shopify session` or `OAuth state`)
+4. Confirm persisted auth state:
+   - success: `Meta auth state` shows `Connected` or `Connected, asset selection incomplete`
+   - failure: `Latest auth failure` is populated with provider/system reason
+
+**Recovery guidance**
+1. Reopen `/app/whatsapp` from Shopify Admin to restore embedded session context.
+2. Click **Connect Meta / WhatsApp** and complete auth again.
+3. If failure persists, capture timestamp + failure text and escalate with relevant support logs.
+
 ---
 
 ## Escalation notes
