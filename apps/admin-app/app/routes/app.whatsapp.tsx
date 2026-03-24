@@ -10,6 +10,7 @@ import {
   type MerchantWhatsappConnectionStatus,
   type MerchantWhatsappSyncStatus,
 } from "../whatsapp-connection.server";
+import { requestWhatsappTemplateSync } from "../whatsapp-templates.server";
 
 const CONNECTION_STATUS_LABELS: Record<MerchantWhatsappConnectionStatus, string> = {
   NOT_CONNECTED: "Not connected",
@@ -75,6 +76,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "sync_templates") {
+    const syncResult = await requestWhatsappTemplateSync(session.shop);
+    const connection = await getMerchantWhatsappConnectionState(session.shop);
+
+    return {
+      saved: false as const,
+      synced: syncResult.ok,
+      syncMessage: syncResult.ok
+        ? "Template sync completed."
+        : syncResult.reason,
+      connectionStatus: connection.connectionStatus,
+      syncStatus: connection.syncStatus,
+      savedAt: new Date().toISOString(),
+    };
+  }
+
   const parsed = parseMerchantWhatsappConnectionFormData(formData);
   const updated = await upsertMerchantWhatsappConnection(session.shop, parsed);
 
@@ -147,7 +166,10 @@ export default function WhatsappConnectionPage() {
         )}
 
         <Form method="post">
-          <s-stack direction="block" gap="base">
+        <s-stack direction="block" gap="base">
+          <button type="submit" name="intent" value="sync_templates" disabled={saving}>
+            {saving ? "Syncing…" : "Sync templates now"}
+          </button>
             <label>
               Business account ID
               <input name="businessAccountId" type="text" defaultValue={connection.businessAccountId} placeholder="1234567890" />
@@ -207,6 +229,11 @@ export default function WhatsappConnectionPage() {
             Saved at {new Date(actionData.savedAt).toLocaleString()}. Connection is now{" "}
             <strong>{CONNECTION_STATUS_LABELS[actionData.connectionStatus]}</strong> and sync is{" "}
             <strong>{SYNC_STATUS_LABELS[actionData.syncStatus]}</strong>.
+          </s-banner>
+        ) : null}
+        {actionData && !actionData.saved ? (
+          <s-banner tone={actionData.synced ? "success" : "critical"}>
+            {actionData.syncMessage} Sync state is <strong>{SYNC_STATUS_LABELS[actionData.syncStatus]}</strong>.
           </s-banner>
         ) : null}
       </s-section>

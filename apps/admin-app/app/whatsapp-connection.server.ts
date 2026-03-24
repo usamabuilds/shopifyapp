@@ -155,8 +155,12 @@ function deriveSyncStatus(input: MerchantWhatsappConnectionInput): MerchantWhats
   return input.syncStatus;
 }
 
-function deriveLastSyncedAt(input: MerchantWhatsappConnectionInput): Date | null {
-  return input.syncStatus === "IN_SYNC" && !input.errorState ? new Date() : null;
+function deriveLastSyncedAt(input: MerchantWhatsappConnectionInput, existingLastSyncedAt: Date | null): Date | null {
+  if (input.syncStatus === "IN_SYNC" && !input.errorState) {
+    return new Date();
+  }
+
+  return existingLastSyncedAt;
 }
 
 export function parseMerchantWhatsappConnectionFormData(formData: FormData): MerchantWhatsappConnectionInput {
@@ -252,7 +256,7 @@ export async function upsertMerchantWhatsappConnection(
   const lastSyncedAt = deriveLastSyncedAt({
     ...input,
     syncStatus,
-  });
+  }, shop.whatsappConnection?.lastSyncedAt ?? null);
 
   const connection = await db.shopWhatsappConnection.upsert({
     where: { shopId: shop.id },

@@ -1,11 +1,18 @@
-import type { LoaderFunctionArgs } from "react-router";
-import { Link, useLoaderData, useNavigation } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { Form, Link, useActionData, useLoaderData, useNavigation } from "react-router";
 
 import { getCartRecoverySettings } from "../automations.cart-recovery.server";
 import { getOrderConfirmationSettings } from "../automations.order-confirmation.server";
 import { getOrderStatusUpdateSettings } from "../automations.order-status-updates.server";
 import { getBroadcastCampaignSettings } from "../campaigns.broadcast.server";
 import { authenticate } from "../shopify.server";
+import { getMerchantWhatsappConnectionState } from "../whatsapp-connection.server";
+import {
+  listSyncedWhatsappTemplates,
+  requestWhatsappTemplateSync,
+  resolveTemplateSyncVisualState,
+  type TemplateSyncVisualState,
+} from "../whatsapp-templates.server";
 
 type TemplateUseCase = "ORDER_CONFIRMATION" | "ORDER_STATUS_UPDATES" | "CART_RECOVERY" | "BROADCAST_CAMPAIGNS";
 type TemplateStatus = "APPROVED" | "PAUSED" | "REJECTED" | "UNAVAILABLE" | "DRAFT";
@@ -23,6 +30,7 @@ type LocalTemplate = {
     body: string;
     footer?: string;
   };
+  providerTemplateId: string;
 };
 
 type FlowMapping = {
@@ -76,78 +84,21 @@ function resolveMappingStatus(row: {
     : "CONNECTED";
 }
 
-function buildLocalTemplates(): LocalTemplate[] {
-  const now = Date.now();
+const TEMPLATE_SYNC_STATE_LABELS: Record<TemplateSyncVisualState, string> = {
+  NEVER_SYNCED: "Never synced",
+  SYNCING: "Syncing",
+  SYNCED: "Synced",
+  SYNC_FAILED: "Sync failed",
+  STALE: "Stale",
+};
 
-  return [
-    {
-      key: "order_confirmation_v1",
-      name: "Order confirmation (default)",
-      category: "UTILITY",
-      language: "en_US",
-      status: "APPROVED",
-      mappedUseCases: ["ORDER_CONFIRMATION"],
-      updatedAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      content: {
-        header: "Order #{{order_number}} confirmed",
-        body: "Hi {{customer_first_name}}, thanks for your order #{{order_number}}. Total: {{total_price}} {{currency}}.",
-        footer: "Reply STOP to opt out",
-      },
-    },
-    {
-      key: "order_status_delivery_v2",
-      name: "Order status update",
-      category: "UTILITY",
-      language: "en_US",
-      status: "APPROVED",
-      mappedUseCases: ["ORDER_STATUS_UPDATES"],
-      updatedAt: new Date(now - 8 * 60 * 60 * 1000).toISOString(),
-      content: {
-        header: "Order #{{order_number}} status",
-        body: "Update: your order #{{order_number}} is {{status_label}}. Tracking: {{tracking_url}}",
-      },
-    },
-    {
-      key: "cart_recovery_nudge_v1",
-      name: "Cart recovery nudge",
-      category: "MARKETING",
-      language: "en_US",
-      status: "PAUSED",
-      mappedUseCases: ["CART_RECOVERY"],
-      updatedAt: new Date(now - 36 * 60 * 60 * 1000).toISOString(),
-      content: {
-        header: "You left something behind",
-        body: "Hi {{customer_first_name}}, your cart worth {{cart_subtotal}} {{currency}} is waiting: {{checkout_url}}",
-      },
-    },
-    {
-      key: "broadcast_flash_sale_v3",
-      name: "Flash sale broadcast",
-      category: "MARKETING",
-      language: "en_US",
-      status: "REJECTED",
-      mappedUseCases: ["BROADCAST_CAMPAIGNS"],
-      updatedAt: new Date(now - 72 * 60 * 60 * 1000).toISOString(),
-      content: {
-        header: "{{campaign_name}}",
-        body: "{{message_body}} Shop now: {{campaign_url}}",
-      },
-    },
-    {
-      key: "legacy_unavailable_template",
-      name: "Legacy utility template",
-      category: "UTILITY",
-      language: "en_US",
-      status: "UNAVAILABLE",
-      mappedUseCases: ["ORDER_CONFIRMATION", "ORDER_STATUS_UPDATES"],
-      updatedAt: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      content: {
-        header: "Legacy",
-        body: "Order {{order_number}} update for {{customer_first_name}}",
-      },
-    },
-  ];
-}
+const TEMPLATE_SYNC_STATE_TONES: Record<TemplateSyncVisualState, "info" | "warning" | "success" | "critical"> = {
+  NEVER_SYNCED: "info",
+  SYNCING: "warning",
+  SYNCED: "success",
+  SYNC_FAILED: "critical",
+  STALE: "warning",
+};
 
 function extractTemplateVariables(template: LocalTemplate): string[] {
   const combined = [template.content.header, template.content.body, template.content.footer ?? ""].join(" ");
@@ -223,14 +174,19 @@ function parseUseCase(value: string | null): TemplateUseCase {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  const [confirmationSettings, orderStatusSettings, cartRecoverySettings, campaignSettings] = await Promise.all([
+  const [confirmationSettings, orderStatusSettings, cartRecoverySettings, campaignSettings, connection, syncedTemplates] = await Promise.all([
     getOrderConfirmationSettings(session.shop),
     getOrderStatusUpdateSettings(session.shop),
     getCartRecoverySettings(session.shop),
     getBroadcastCampaignSettings(session.shop),
+    getMerchantWhatsappConnectionState(session.shop),
+    listSyncedWhatsappTemplates(session.shop),
   ]);
 
-  const templates = buildLocalTemplates();
+  const templates: LocalTemplate[] = syncedTemplates.map((template) => ({
+    ...template,
+    mappedUseCases: [],
+  }));
   const byKey = new Map(templates.map((template) => [template.key, template]));
 
   const mappingRows: FlowMapping[] = [
@@ -332,12 +288,35 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   ];
 
+  const mappedUseCasesByTemplateKey = new Map<string, Set<TemplateUseCase>>();
+
+  for (const row of mappingRows) {
+    if (!row.template) {
+      continue;
+    }
+
+    const bucket = mappedUseCasesByTemplateKey.get(row.template.key) ?? new Set<TemplateUseCase>();
+    bucket.add(row.useCase);
+    mappedUseCasesByTemplateKey.set(row.template.key, bucket);
+  }
+
+  const templatesWithMappings = templates.map((template) => ({
+    ...template,
+    mappedUseCases: [...(mappedUseCasesByTemplateKey.get(template.key) ?? new Set<TemplateUseCase>())],
+  }));
+
   const url = new URL(request.url);
-  const selectedTemplateKey = url.searchParams.get("template") ?? templates[0]?.key ?? "";
+  const selectedTemplateKey = url.searchParams.get("template") ?? templatesWithMappings[0]?.key ?? "";
   const selectedUseCase = parseUseCase(url.searchParams.get("useCase"));
+  const syncVisualState = resolveTemplateSyncVisualState({
+    syncStatus: connection.syncStatus,
+    lastSyncedAt: connection.lastSyncedAt,
+  });
 
   return {
-    templates,
+    connection,
+    templates: templatesWithMappings,
+    syncVisualState,
     mappingRows,
     selectedTemplateKey,
     selectedUseCase,
@@ -345,9 +324,34 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent !== "sync_templates") {
+    return {
+      synced: false,
+      message: "Unsupported action.",
+    };
+  }
+
+  const result = await requestWhatsappTemplateSync(session.shop);
+
+  return {
+    synced: result.ok,
+    message: result.ok
+      ? "Template sync completed and library refreshed."
+      : result.reason,
+    completedAt: new Date().toISOString(),
+  };
+};
+
 export default function TemplatesPage() {
-  const { templates, mappingRows, selectedTemplateKey, selectedUseCase, sampleContexts } = useLoaderData<typeof loader>();
+  const { connection, templates, syncVisualState, mappingRows, selectedTemplateKey, selectedUseCase, sampleContexts } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
+  const syncing = navigation.state === "submitting";
 
   const selectedTemplate = templates.find((template) => template.key === selectedTemplateKey) ?? templates[0] ?? null;
   const context = sampleContexts[selectedUseCase];
@@ -357,7 +361,7 @@ export default function TemplatesPage() {
       <s-page heading="Templates">
         <s-section heading="Template library">
           <s-banner tone="info">
-            No local templates available yet. Add template records in this foundation before wiring provider sync.
+            No synced templates available yet. Start sync from WhatsApp connection or refresh below.
           </s-banner>
         </s-section>
       </s-page>
@@ -397,11 +401,23 @@ export default function TemplatesPage() {
 
       <s-section heading="Template library">
         <s-paragraph>
-          Merchant-facing local template management foundation. This view is intentionally local and does not sync real provider templates yet.
+          Synced provider templates for this merchant connection.
         </s-paragraph>
+        <s-banner tone={TEMPLATE_SYNC_STATE_TONES[syncVisualState]}>
+          Sync state: <strong>{TEMPLATE_SYNC_STATE_LABELS[syncVisualState]}</strong>. Last synced:{" "}
+          <strong>{connection.lastSyncedAt ? new Date(connection.lastSyncedAt).toLocaleString() : "Never"}</strong>.
+        </s-banner>
+        <Form method="post">
+          <button type="submit" name="intent" value="sync_templates" disabled={syncing}>
+            {syncing ? "Syncing…" : "Refresh synced templates"}
+          </button>
+        </Form>
+        {actionData?.message ? (
+          <s-banner tone={actionData.synced ? "success" : "critical"}>{actionData.message}</s-banner>
+        ) : null}
         <s-banner tone="info">
-          Category assumptions used in Phase 1: order confirmation/status are utility, cart recovery/broadcast
-          are marketing. Map templates accordingly.
+          Category assumptions used in Phase 1: order confirmation/status are utility, cart recovery/broadcast are
+          marketing. Map templates accordingly.
         </s-banner>
 
         <table>
@@ -423,7 +439,7 @@ export default function TemplatesPage() {
                 <td>{template.category}</td>
                 <td>{template.language}</td>
                 <td>{template.status}</td>
-                <td>{template.mappedUseCases.map((item) => USE_CASE_LABELS[item]).join(", ")}</td>
+                <td>{template.mappedUseCases.length > 0 ? template.mappedUseCases.map((item) => USE_CASE_LABELS[item]).join(", ") : "-"}</td>
                 <td>{new Date(template.updatedAt).toLocaleString()}</td>
                 <td>
                   <Link to={`/app/templates?template=${encodeURIComponent(template.key)}&useCase=${selectedUseCase}`}>
@@ -481,6 +497,9 @@ export default function TemplatesPage() {
               </s-banner>
               <s-paragraph>
                 Key: <code>{selectedTemplate.key}</code>
+              </s-paragraph>
+              <s-paragraph>
+                Provider ID: <code>{selectedTemplate.providerTemplateId}</code>
               </s-paragraph>
               <s-paragraph>
                 Variables: {extractTemplateVariables(selectedTemplate).map((item) => <code key={item}>{item} </code>)}
