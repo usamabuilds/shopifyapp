@@ -19,6 +19,14 @@ type ShopRecord = {
     configurationNotes: string | null;
     errorState: string | null;
     templateSyncRequested: boolean;
+    authStateNonce: string | null;
+    authRequestedAt: Date | null;
+    authFailureReason: string | null;
+    providerAccessToken: string | null;
+    providerTokenType: string | null;
+    providerTokenExpiresAt: Date | null;
+    providerUserId: string | null;
+    providerConnectedAt: Date | null;
     updatedAt: Date;
   } | null;
   onboarding: {
