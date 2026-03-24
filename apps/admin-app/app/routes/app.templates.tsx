@@ -5,9 +5,13 @@ import { getCartRecoverySettings } from "../automations.cart-recovery.server";
 import { getOrderConfirmationSettings } from "../automations.order-confirmation.server";
 import { getOrderStatusUpdateSettings } from "../automations.order-status-updates.server";
 import { getBroadcastCampaignSettings } from "../campaigns.broadcast.server";
+import prisma from "../db.server";
+import { createOutboundMessage, dispatchOutboundMessage } from "../messaging/outbound-messaging.server";
+import { WhatsAppCloudProviderAdapter } from "../messaging/whatsapp-cloud-provider.server";
 import { authenticate } from "../shopify.server";
-import { getMerchantWhatsappConnectionState } from "../whatsapp-connection.server";
+import { getMerchantWhatsappConnectionState, getMerchantWhatsappProviderCredentials } from "../whatsapp-connection.server";
 import {
+  getSyncedWhatsappTemplateByKey,
   listSyncedWhatsappTemplates,
   requestWhatsappTemplateSync,
   resolveTemplateSyncVisualState,
@@ -43,6 +47,25 @@ type FlowMapping = {
 };
 
 type SampleContext = Record<string, string>;
+
+type OutboundMessageListItem = {
+  id: string;
+  templateKey: string | null;
+  recipientAddress: string;
+  status: string;
+  statusReason: string | null;
+  providerMessageId: string | null;
+  createdAt: Date;
+  sentAt: Date | null;
+};
+
+type PrismaDb = {
+  outboundMessage: {
+    findMany: (args: Record<string, unknown>) => Promise<OutboundMessageListItem[]>;
+  };
+};
+
+const db = prisma as unknown as PrismaDb;
 
 const TEMPLATE_STATUS_TONE: Record<TemplateStatus, "success" | "info" | "warning" | "critical"> = {
   APPROVED: "success",
@@ -105,6 +128,88 @@ function extractTemplateVariables(template: LocalTemplate): string[] {
   const matches = combined.match(/{{\s*[a-z0-9_]+\s*}}/gi) ?? [];
 
   return [...new Set(matches.map((match) => match.replace(/[{}\s]/g, "")))];
+}
+
+function extractVariablesInOrder(content: string): string[] {
+  const matches = [...content.matchAll(/{{\s*([a-z0-9_]+)\s*}}/gi)];
+  return matches.map((item) => item[1]);
+}
+
+function buildTemplateComponent(
+  type: "header" | "body",
+  variables: string[],
+  context: SampleContext,
+): { type: "header" | "body"; parameters: Array<{ type: "text"; text: string }> } | null {
+  if (variables.length === 0) {
+    return null;
+  }
+
+  const parameters = variables.map((variable) => ({
+    type: "text" as const,
+    text: context[variable] ?? "",
+  }));
+
+  return {
+    type,
+    parameters,
+  };
+}
+
+function parseTemplateVariableOverrides(rawJson: string): { ok: true; context: SampleContext } | { ok: false; reason: string } {
+  if (!rawJson.trim()) {
+    return {
+      ok: true,
+      context: {},
+    };
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch {
+    return {
+      ok: false,
+      reason: "Variable overrides must be valid JSON.",
+    };
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      reason: "Variable overrides must be a JSON object.",
+    };
+  }
+
+  const context: SampleContext = {};
+
+  for (const [rawKey, rawValue] of Object.entries(parsed)) {
+    const key = rawKey.trim();
+
+    if (!key) {
+      continue;
+    }
+
+    if (typeof rawValue === "string") {
+      context[key] = rawValue;
+      continue;
+    }
+
+    if (typeof rawValue === "number" || typeof rawValue === "boolean") {
+      context[key] = String(rawValue);
+      continue;
+    }
+
+    return {
+      ok: false,
+      reason: `Variable "${key}" must be a string, number, or boolean.`,
+    };
+  }
+
+  return {
+    ok: true,
+    context,
+  };
 }
 
 function renderTemplate(content: string, context: SampleContext): { rendered: string; unresolved: string[] } {
@@ -174,13 +279,24 @@ function parseUseCase(value: string | null): TemplateUseCase {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  const [confirmationSettings, orderStatusSettings, cartRecoverySettings, campaignSettings, connection, syncedTemplates] = await Promise.all([
+  const [confirmationSettings, orderStatusSettings, cartRecoverySettings, campaignSettings, connection, syncedTemplates, recentTemplateTestSends] = await Promise.all([
     getOrderConfirmationSettings(session.shop),
     getOrderStatusUpdateSettings(session.shop),
     getCartRecoverySettings(session.shop),
     getBroadcastCampaignSettings(session.shop),
     getMerchantWhatsappConnectionState(session.shop),
     listSyncedWhatsappTemplates(session.shop),
+    db.outboundMessage.findMany({
+      where: {
+        shopDomain: session.shop,
+        useCase: "custom",
+        templateKey: {
+          startsWith: "template_test:",
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
   ]);
 
   const templates: LocalTemplate[] = syncedTemplates.map((template) => ({
@@ -321,6 +437,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     selectedTemplateKey,
     selectedUseCase,
     sampleContexts: getSampleContexts(),
+    recentTemplateTestSends,
   };
 };
 
@@ -329,29 +446,154 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
 
-  if (intent !== "sync_templates") {
+  if (intent === "sync_templates") {
+    const result = await requestWhatsappTemplateSync(session.shop);
+
     return {
-      synced: false,
-      message: "Unsupported action.",
+      action: "sync_templates" as const,
+      synced: result.ok,
+      message: result.ok
+        ? "Template sync completed and library refreshed."
+        : result.reason,
+      completedAt: new Date().toISOString(),
     };
   }
 
-  const result = await requestWhatsappTemplateSync(session.shop);
+  if (intent === "send_template_test") {
+    const recipientAddress = String(formData.get("testRecipientAddress") ?? "").trim();
+    const templateKey = String(formData.get("templateKey") ?? "").trim();
+    const useCase = parseUseCase(String(formData.get("useCase") ?? null));
+    const overrideJson = String(formData.get("templateVariablesJson") ?? "");
+
+    if (!recipientAddress || !templateKey) {
+      return {
+        action: "send_template_test" as const,
+        synced: false as const,
+        message: "Recipient and template are required for template test send.",
+      };
+    }
+
+    const template = await getSyncedWhatsappTemplateByKey(session.shop, templateKey);
+
+    if (!template) {
+      return {
+        action: "send_template_test" as const,
+        synced: false as const,
+        message: `Template key "${templateKey}" is not present in synced template data.`,
+      };
+    }
+
+    if (template.status !== "APPROVED") {
+      return {
+        action: "send_template_test" as const,
+        synced: false as const,
+        message: `Template "${template.name}" is ${template.status}. Only APPROVED templates can be sent in this test path.`,
+      };
+    }
+
+    const parsedOverrides = parseTemplateVariableOverrides(overrideJson);
+
+    if (!parsedOverrides.ok) {
+      return {
+        action: "send_template_test" as const,
+        synced: false as const,
+        message: parsedOverrides.reason,
+      };
+    }
+
+    const sampleContext = getSampleContexts()[useCase];
+    const mergedContext: SampleContext = {
+      ...sampleContext,
+      ...parsedOverrides.context,
+    };
+
+    const headerVariables = extractVariablesInOrder(template.content.header);
+    const bodyVariables = extractVariablesInOrder(template.content.body);
+    const requiredVariables = new Set<string>([...headerVariables, ...bodyVariables]);
+    const missingVariables = [...requiredVariables].filter((variable) => !mergedContext[variable]);
+
+    if (missingVariables.length > 0) {
+      return {
+        action: "send_template_test" as const,
+        synced: false as const,
+        message: `Missing required template variables: ${missingVariables.map((item) => `{{${item}}}`).join(", ")}.`,
+      };
+    }
+
+    const credentials = await getMerchantWhatsappProviderCredentials(session.shop);
+
+    if (!credentials.ok) {
+      return {
+        action: "send_template_test" as const,
+        synced: false as const,
+        message: credentials.reason,
+      };
+    }
+
+    const components = [
+      buildTemplateComponent("header", headerVariables, mergedContext),
+      buildTemplateComponent("body", bodyVariables, mergedContext),
+    ].filter((component): component is { type: "header" | "body"; parameters: Array<{ type: "text"; text: string }> } => Boolean(component));
+
+    const outboundMessage = await createOutboundMessage({
+      shopDomain: session.shop,
+      channel: "WHATSAPP",
+      useCase: "custom",
+      recipientAddress,
+      payload: {
+        type: "template",
+        template: {
+          name: template.key,
+          languageCode: template.language,
+          components,
+        },
+      },
+      providerName: "meta_whatsapp_cloud",
+      templateKey: `template_test:${template.key}`,
+      metadata: {
+        source: "app_template_test_send",
+        providerTemplateId: template.providerTemplateId,
+        templateKey: template.key,
+        useCase,
+        providedVariableKeys: Object.keys(mergedContext).sort(),
+      },
+    });
+
+    const dispatchResult = await dispatchOutboundMessage({
+      messageId: outboundMessage.id,
+      provider: new WhatsAppCloudProviderAdapter({
+        phoneNumberId: credentials.phoneNumberId,
+        accessToken: credentials.accessToken,
+        tokenType: credentials.tokenType,
+      }),
+    });
+
+    const dispatched = dispatchResult.status === "SENT" || dispatchResult.status === "DELIVERED";
+
+    return {
+      action: "send_template_test" as const,
+      synced: dispatched,
+      message: dispatched
+        ? `Template send queued successfully (message ${outboundMessage.id}). Provider message id: ${dispatchResult.providerMessageId ?? "not returned"}.`
+        : `Template send failed (message ${outboundMessage.id}): ${dispatchResult.statusReason ?? "provider error"}.`,
+      completedAt: new Date().toISOString(),
+    };
+  }
 
   return {
-    synced: result.ok,
-    message: result.ok
-      ? "Template sync completed and library refreshed."
-      : result.reason,
-    completedAt: new Date().toISOString(),
+    action: "unsupported" as const,
+    synced: false,
+    message: "Unsupported action.",
   };
 };
 
 export default function TemplatesPage() {
-  const { connection, templates, syncVisualState, mappingRows, selectedTemplateKey, selectedUseCase, sampleContexts } = useLoaderData<typeof loader>();
+  const { connection, templates, syncVisualState, mappingRows, selectedTemplateKey, selectedUseCase, sampleContexts, recentTemplateTestSends } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
-  const syncing = navigation.state === "submitting";
+  const currentIntent = navigation.formData?.get("intent");
+  const syncing = navigation.state === "submitting" && currentIntent === "sync_templates";
+  const sendingTemplateTest = navigation.state === "submitting" && currentIntent === "send_template_test";
 
   const selectedTemplate = templates.find((template) => template.key === selectedTemplateKey) ?? templates[0] ?? null;
   const context = sampleContexts[selectedUseCase];
@@ -412,7 +654,7 @@ export default function TemplatesPage() {
             {syncing ? "Syncing…" : "Refresh synced templates"}
           </button>
         </Form>
-        {actionData?.message ? (
+        {actionData?.message && actionData.action === "sync_templates" ? (
           <s-banner tone={actionData.synced ? "success" : "critical"}>{actionData.message}</s-banner>
         ) : null}
         <s-banner tone="info">
@@ -555,6 +797,65 @@ export default function TemplatesPage() {
                 </>
               ) : null}
             </s-stack>
+          </s-section>
+
+          <s-section heading="Template-backed test send">
+            <s-paragraph>
+              Sends one real WhatsApp template message through the provider using this synced template and sample/override variables.
+            </s-paragraph>
+            <Form method="post">
+              <input type="hidden" name="intent" value="send_template_test" />
+              <input type="hidden" name="templateKey" value={selectedTemplate.key} />
+              <input type="hidden" name="useCase" value={selectedUseCase} />
+              <s-stack direction="block" gap="small">
+                <label>
+                  Recipient phone (E.164 digits)
+                  <input name="testRecipientAddress" type="text" placeholder="15551234567" required />
+                </label>
+                <label>
+                  Optional variable overrides (JSON object)
+                  <textarea
+                    name="templateVariablesJson"
+                    rows={6}
+                    defaultValue=""
+                    placeholder='{"customer_first_name":"Avery","order_number":"1045"}'
+                  />
+                </label>
+                <button type="submit" disabled={sendingTemplateTest}>
+                  {sendingTemplateTest ? "Sending template…" : "Send template test message"}
+                </button>
+              </s-stack>
+            </Form>
+
+            {actionData?.message && actionData.action === "send_template_test" ? (
+              <s-banner tone={actionData.synced ? "success" : "critical"}>{actionData.message}</s-banner>
+            ) : null}
+
+            <s-paragraph>Recent template test sends:</s-paragraph>
+            <table>
+              <thead>
+                <tr>
+                  <th>Created</th>
+                  <th>Template key</th>
+                  <th>Recipient</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Provider message id</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTemplateTestSends.map((send) => (
+                  <tr key={send.id}>
+                    <td>{new Date(send.createdAt).toLocaleString()}</td>
+                    <td>{send.templateKey ?? "-"}</td>
+                    <td>{send.recipientAddress}</td>
+                    <td>{send.status}</td>
+                    <td>{send.statusReason ?? "-"}</td>
+                    <td>{send.providerMessageId ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </s-section>
         </>
       ) : (

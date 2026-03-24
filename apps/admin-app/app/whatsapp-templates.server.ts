@@ -51,6 +51,7 @@ type PrismaDb = {
   };
   shopWhatsappTemplate: {
     findMany: (args: Record<string, unknown>) => Promise<TemplateRecord[]>;
+    findUnique: (args: Record<string, unknown>) => Promise<TemplateRecord | null>;
     upsert: (args: Record<string, unknown>) => Promise<unknown>;
     updateMany: (args: Record<string, unknown>) => Promise<unknown>;
   };
@@ -162,6 +163,46 @@ export async function listSyncedWhatsappTemplates(shopDomain: string): Promise<S
       footer: template.footer ?? undefined,
     },
   }));
+}
+
+export async function getSyncedWhatsappTemplateByKey(
+  shopDomain: string,
+  templateKey: string,
+): Promise<SyncedWhatsappTemplate | null> {
+  const shop = await ensureShopFoundation(shopDomain);
+  const normalizedKey = templateKey.trim();
+
+  if (!normalizedKey) {
+    return null;
+  }
+
+  const template = await db.shopWhatsappTemplate.findUnique({
+    where: {
+      shopId_templateKey: {
+        shopId: shop.id,
+        templateKey: normalizedKey,
+      },
+    },
+  });
+
+  if (!template) {
+    return null;
+  }
+
+  return {
+    key: template.templateKey,
+    providerTemplateId: template.providerTemplateId ?? template.templateKey,
+    name: template.name,
+    category: parseTemplateCategory(template.category),
+    language: template.language,
+    status: parseTemplateStatus(template.status),
+    updatedAt: template.updatedAt.toISOString(),
+    content: {
+      header: template.header,
+      body: template.body,
+      footer: template.footer ?? undefined,
+    },
+  };
 }
 
 export function resolveTemplateSyncVisualState(args: {

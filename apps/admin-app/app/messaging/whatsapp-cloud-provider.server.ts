@@ -1,6 +1,7 @@
 import type {
   OutboundProviderAdapter,
   ProviderFailureCode,
+  ProviderSendFailure,
   ProviderSendRequest,
   ProviderSendResult,
 } from "./outbound-messaging.server";
@@ -9,6 +10,25 @@ type WhatsappCloudProviderConfig = {
   phoneNumberId: string;
   accessToken: string;
   tokenType: string;
+};
+
+type TemplateComponentParameter = {
+  type: "text";
+  text: string;
+};
+
+type TemplateComponent = {
+  type: "header" | "body";
+  parameters: TemplateComponentParameter[];
+};
+
+type TemplatePayload = {
+  type: "template";
+  template: {
+    name: string;
+    languageCode: string;
+    components?: TemplateComponent[];
+  };
 };
 
 type GraphApiError = {
@@ -65,32 +85,20 @@ export class WhatsAppCloudProviderAdapter implements OutboundProviderAdapter {
   }
 
   async sendMessage(input: ProviderSendRequest): Promise<ProviderSendResult> {
-    const textBody = this.extractTextPayload(input.payload);
+    const endpoint = `https://graph.facebook.com/v22.0/${this.config.phoneNumberId}/messages`;
+    const providerPayload = this.buildProviderPayload(input.payload, input.recipientAddress);
 
-    if (!textBody) {
-      return {
-        ok: false,
-        code: "UNKNOWN",
-        message: "Unsupported outbound payload for WhatsApp Cloud test send.",
-      };
+    if (!providerPayload.ok) {
+      return providerPayload.failure;
     }
 
-    const endpoint = `https://graph.facebook.com/v22.0/${this.config.phoneNumberId}/messages`;
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         Authorization: `${this.config.tokenType} ${this.config.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: input.recipientAddress,
-        type: "text",
-        text: {
-          body: textBody,
-          preview_url: false,
-        },
-      }),
+      body: JSON.stringify(providerPayload.body),
     });
 
     let responsePayload: unknown = null;
@@ -130,8 +138,159 @@ export class WhatsAppCloudProviderAdapter implements OutboundProviderAdapter {
     };
   }
 
-  private extractTextPayload(payload: unknown): string | null {
+  private buildProviderPayload(payload: unknown, recipientAddress: string):
+    | { ok: true; body: Record<string, unknown> }
+    | { ok: false; failure: ProviderSendFailure } {
+    const templatePayload = this.extractTemplatePayload(payload);
+
+    if (templatePayload) {
+      return {
+        ok: true,
+        body: {
+          messaging_product: "whatsapp",
+          to: recipientAddress,
+          type: "template",
+          template: {
+            name: templatePayload.template.name,
+            language: {
+              code: templatePayload.template.languageCode,
+            },
+            components: templatePayload.template.components ?? [],
+          },
+        },
+      };
+    }
+
+    const textBody = this.extractTextPayload(payload);
+
+    if (textBody) {
+      return {
+        ok: true,
+        body: {
+          messaging_product: "whatsapp",
+          to: recipientAddress,
+          type: "text",
+          text: {
+            body: textBody,
+            preview_url: false,
+          },
+        },
+      };
+    }
+
+    return {
+      ok: false,
+      failure: {
+        ok: false,
+        code: "UNKNOWN",
+        message: "Unsupported outbound payload for WhatsApp Cloud provider send.",
+      },
+    };
+  }
+
+  private extractTemplatePayload(payload: unknown): TemplatePayload | null {
     if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    const typedPayload = payload as {
+      type?: unknown;
+      template?: {
+        name?: unknown;
+        languageCode?: unknown;
+        components?: unknown;
+      };
+    };
+
+    if (typedPayload.type !== "template") {
+      return null;
+    }
+
+    const templateName = typeof typedPayload.template?.name === "string"
+      ? typedPayload.template.name.trim()
+      : "";
+    const languageCode = typeof typedPayload.template?.languageCode === "string"
+      ? typedPayload.template.languageCode.trim()
+      : "";
+
+    if (!templateName || !languageCode) {
+      return null;
+    }
+
+    const parsedComponents = this.parseTemplateComponents(typedPayload.template?.components);
+
+    if (parsedComponents === null) {
+      return null;
+    }
+
+    return {
+      type: "template",
+      template: {
+        name: templateName,
+        languageCode,
+        components: parsedComponents,
+      },
+    };
+  }
+
+  private parseTemplateComponents(value: unknown): TemplateComponent[] | null {
+    if (!value) {
+      return [];
+    }
+
+    if (!Array.isArray(value)) {
+      return null;
+    }
+
+    const parsed: TemplateComponent[] = [];
+
+    for (const component of value) {
+      if (!component || typeof component !== "object") {
+        return null;
+      }
+
+      const rawType = (component as { type?: unknown }).type;
+      const rawParameters = (component as { parameters?: unknown }).parameters;
+
+      if (rawType !== "header" && rawType !== "body") {
+        return null;
+      }
+
+      if (!Array.isArray(rawParameters)) {
+        return null;
+      }
+
+      const parameters: TemplateComponentParameter[] = [];
+
+      for (const parameter of rawParameters) {
+        if (!parameter || typeof parameter !== "object") {
+          return null;
+        }
+
+        const parameterType = (parameter as { type?: unknown }).type;
+        const parameterText = (parameter as { text?: unknown }).text;
+
+        if (parameterType !== "text" || typeof parameterText !== "string" || parameterText.trim().length === 0) {
+          return null;
+        }
+
+        parameters.push({
+          type: "text",
+          text: parameterText,
+        });
+      }
+
+      parsed.push({
+        type: rawType,
+        parameters,
+      });
+    }
+
+    return parsed;
+  }
+
+  private extractTextPayload(payload: unknown): string | null {
+    if (!payload || typeof payload !== "object" || (payload as { type?: unknown }).type === "template") {
       return null;
     }
 
