@@ -9,6 +9,18 @@ type ShopRecord = {
     defaultCountry: string | null;
     timezone: string | null;
   } | null;
+  whatsappConnection: {
+    businessAccountId: string | null;
+    phoneNumberId: string | null;
+    displayPhoneNumber: string | null;
+    connectionStatus: string;
+    syncStatus: string;
+    lastSyncedAt: Date | null;
+    configurationNotes: string | null;
+    errorState: string | null;
+    templateSyncRequested: boolean;
+    updatedAt: Date;
+  } | null;
   onboarding: {
     currentStep: string;
     checklistIdentityComplete: boolean;
@@ -101,6 +113,7 @@ export async function ensureShopFoundation(shopDomain: string) {
     include: {
       onboarding: true,
       settings: true,
+      whatsappConnection: true,
     },
   });
 }

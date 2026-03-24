@@ -88,6 +88,9 @@ export default function SettingsPage() {
     !settings.contactEmail ? "Missing contact email: add one so support follow-up has an owner." : null,
     !settings.defaultCountry ? "Missing default country: some defaults may be ambiguous in reports and forms." : null,
     !settings.timezone ? "Missing timezone: scheduled actions may be harder to reason about." : null,
+    !overview.onboarding.readiness.whatsappConnected
+      ? "WhatsApp is not connected yet: complete the connection foundation before enabling production sends."
+      : null,
     !campaignSettings.enabled ? "Campaign dispatch is currently paused in campaign settings." : null,
   ].filter((item): item is string => Boolean(item));
 
@@ -114,6 +117,13 @@ export default function SettingsPage() {
                 <td>Merchant profile defaults</td>
                 <td>Contact and locale defaults used across setup and operations.</td>
                 <td>This page</td>
+              </tr>
+              <tr>
+                <td>WhatsApp connection</td>
+                <td>Provider account, phone, and sync readiness for onboarding.</td>
+                <td>
+                  <Link to="/app/whatsapp">WhatsApp connection</Link>
+                </td>
               </tr>
               <tr>
                 <td>Template mapping</td>

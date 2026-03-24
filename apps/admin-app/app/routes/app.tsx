@@ -23,6 +23,7 @@ export default function App() {
       <NavMenu>
         <a href="/app">Dashboard</a>
         <a href="/app/settings">Settings</a>
+        <a href="/app/whatsapp">WhatsApp connection</a>
         <a href="/app/support-tools">Support tools</a>
         <a href="/app/templates">Templates</a>
         <a href="/app/automations">Automations</a>

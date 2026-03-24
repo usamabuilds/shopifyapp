@@ -42,6 +42,7 @@ model Shop {
   appInstalled  Boolean         @default(true)
   settings      ShopSettings?
   onboarding    OnboardingState?
+  whatsappConnection ShopWhatsappConnection?
   webhookEvents      WebhookEvent[]
   outboundMessages   OutboundMessage[]
   outboundCallbacks  OutboundMessageCallback[]
@@ -98,6 +99,40 @@ model OnboardingState {
   shop                        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
 }
 
+
+
+model ShopWhatsappConnection {
+  id                  String                            @id @default(cuid())
+  shopId              String                            @unique
+  businessAccountId   String?
+  phoneNumberId       String?
+  displayPhoneNumber  String?
+  connectionStatus    WhatsAppConnectionStatus          @default(NOT_CONNECTED)
+  syncStatus          WhatsAppTemplateSyncStatus        @default(NOT_STARTED)
+  lastSyncedAt        DateTime?
+  configurationNotes  String?
+  errorState          String?
+  templateSyncRequested Boolean                         @default(false)
+  createdAt           DateTime                          @default(now())
+  updatedAt           DateTime                          @updatedAt
+  shop                Shop                              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+enum WhatsAppConnectionStatus {
+  NOT_CONNECTED
+  INCOMPLETE_SETUP
+  MISCONFIGURED
+  SYNC_NEEDED
+  CONNECTED
+}
+
+enum WhatsAppTemplateSyncStatus {
+  NOT_STARTED
+  PENDING
+  IN_SYNC
+  NEEDS_ATTENTION
+  FAILED
+}
 
 model OutboundMessage {
   id                    String                   @id @default(cuid())
