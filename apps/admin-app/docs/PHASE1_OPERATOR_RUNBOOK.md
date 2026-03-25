@@ -144,30 +144,32 @@ This runbook is for operator/support responders working in `app/support-tools`.
 2. Click **Connect Meta / WhatsApp** and complete auth again.
 3. If failure persists, capture timestamp + failure text and escalate with relevant support logs.
 
-## 9) WhatsApp live test-send verification (local/dev)
+## 9) WhatsApp template-backed test-send verification (local/dev)
 
 **Goal**
-- Verify one real provider-backed WhatsApp send path from `/app/whatsapp` using persisted merchant connection state.
+- Verify one real provider-backed WhatsApp *template* send path from `/app/templates` using persisted merchant connection + synced template state.
 
 **Readiness checks**
 1. In **/app/whatsapp**, confirm Meta auth state is `Connected` (or reconnect first).
-2. Confirm phone number ID is present in the saved connection state.
-3. Confirm there is no active misconfiguration error state.
+2. In **/app/templates**, confirm the template library has synced rows and select an `APPROVED` template.
+3. Confirm phone number ID is present and there is no active connection misconfiguration error state.
 
 **Verification flow**
-1. In **Live provider test send**, enter:
+1. In **/app/templates → Template-backed test send**, enter:
    - recipient in E.164 digits (example: `15551234567`)
-   - short test message text
-2. Click **Send live test message**.
+   - optional JSON variable overrides (only if you need to override sample values)
+2. Click **Send template test message**.
 3. Confirm operator-visible evidence:
    - success/failure banner for this dispatch attempt
-   - row in recent test-send table with created timestamp, status, reason, and provider message id (if returned)
+   - row in recent template test-send table with created timestamp, template key, status, reason, and provider message id (if returned)
 4. Use **Support tools** if needed to inspect outbound attempt details for the same message id and failure reason.
 
 **Common failures + recovery**
 1. `Meta access token is missing`: run **Connect Meta / WhatsApp** again.
 2. `WhatsApp phone number ID is missing`: complete provider asset setup and save.
-3. provider auth error or invalid recipient: verify token validity and recipient formatting in E.164.
+3. `Template ... is PAUSED/REJECTED/UNAVAILABLE`: sync templates and pick an `APPROVED` template.
+4. `Missing required template variables`: provide variable overrides JSON with the required placeholders.
+5. provider auth error or invalid recipient: verify token validity and recipient formatting in E.164.
 
 ---
 
